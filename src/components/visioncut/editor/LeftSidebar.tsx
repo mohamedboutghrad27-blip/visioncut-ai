@@ -99,7 +99,7 @@ function AssetTile({ asset, onAdd, onDelete }: { asset: Asset; onAdd: () => void
       <button onClick={onAdd} className="block w-full" aria-label={`Add ${asset.name} to timeline`}>
         <div className="relative aspect-video w-full overflow-hidden bg-black/50">
           {asset.thumbnail ? (
-            <img src={asset.thumbnail} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+            <img src={asset.thumbnail} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               {asset.kind === "audio" ? <Music className="h-6 w-6 text-emerald-300/70" /> : <ImageIcon className="h-6 w-6 text-zinc-600" />}

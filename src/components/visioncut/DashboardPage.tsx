@@ -259,7 +259,7 @@ export function DashboardPage() {
               >
                 <div className={cn("relative w-full overflow-hidden", RATIO_BOX[p.aspectRatio] || "aspect-video")}>
                   {p.thumbnail ? (
-                    <img src={p.thumbnail} alt="" className="h-full w-full object-cover" />
+                    <img src={p.thumbnail} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                   ) : (
                     <ThumbGradient seed={p.id + p.name} />
                   )}

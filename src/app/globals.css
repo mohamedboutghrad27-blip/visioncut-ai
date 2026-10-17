@@ -250,16 +250,46 @@
   animation: vc-shimmer 1.6s infinite linear;
 }
 
-/* Reveal-on-scroll base state (activated by IntersectionObserver) */
-.vc-reveal {
+/* Reveal-on-scroll base state (activated by IntersectionObserver).
+   Hidden state applies ONLY when JS is available (html.js set inline in layout):
+   without JS (crawlers, failures) content stays fully visible — ui-ux-pro-max rule. */
+.js .vc-reveal {
   opacity: 0;
   transform: translateY(28px);
   transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1), transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: opacity, transform;
 }
-.vc-reveal.vc-revealed {
+.js .vc-reveal.vc-revealed {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Reduced motion (prefers-reduced-motion): render final state immediately,
+   stop infinite loops and long transitions — ui-ux-pro-max priority 7 rule. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .js .vc-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .animate-float,
+  .animate-pulse-glow,
+  .animate-marquee,
+  .animate-spin-slow,
+  .animate-scanline {
+    animation: none !important;
+  }
 }
 
 /* Focus visibility for keyboard users */

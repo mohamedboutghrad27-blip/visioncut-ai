@@ -90,6 +90,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        {/* Marks JS availability before paint: reveal animations only hide content when JS runs (ui-ux-pro-max no-JS fallback rule) */}
+        <script dangerouslySetInnerHTML={{ __html: 'document.documentElement.classList.add("js");' }} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased bg-background text-foreground`}
       >

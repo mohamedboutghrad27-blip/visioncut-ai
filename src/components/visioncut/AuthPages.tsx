@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "@/lib/router";
 import { useAuth } from "@/components/visioncut/AuthContext";
 import { Logo, GradientButton } from "@/components/visioncut/shared";
@@ -11,6 +11,24 @@ import { ArrowLeft, Eye, EyeOff, Info, Loader2, Sparkles, MailCheck } from "luci
 import { cn } from "@/lib/utils";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/* Accessible form error (ui-ux-pro-max §8): role=alert announces the failure,
+   focus moves to the summary after a failed submit, and fields know which of
+   them caused it via aria-invalid + aria-describedby. */
+function useFormError() {
+  const [err, setErr] = useState<{ msg: string; field?: string } | null>(null);
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (err) ref.current?.focus();
+  }, [err]);
+  return {
+    err,
+    set: (msg: string, field?: string) => setErr({ msg, field }),
+    clear: () => setErr(null),
+    bind: (id: string) => ({ id, role: "alert" as const, tabIndex: -1, ref }),
+    isField: (field: string) => err?.field === field,
+  };
+}
 
 type Mode = "login" | "signup" | "reset" | "reset-confirm";
 
@@ -62,22 +80,22 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const fe = useFormError();
   const [busy, setBusy] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    if (!EMAIL_RE.test(email.trim())) return setError("Please enter a valid email address.");
-    if (!password) return setError("Please enter your password.");
+    fe.clear();
+    if (!EMAIL_RE.test(email.trim())) return fe.set("Please enter a valid email address.", "email");
+    if (!password) return fe.set("Please enter your password.", "password");
     setBusy(true);
     try {
       await login(email.trim(), password);
       toast.success("Welcome back!");
       router.navigate("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed");
+      fe.set(err instanceof Error ? err.message : "Sign in failed");
     } finally {
       setBusy(false);
     }
@@ -90,7 +108,7 @@ export function LoginPage() {
       toast.success("Demo mode started", { description: "You're signed in as the demo creator with example projects." });
       router.navigate("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Demo mode failed");
+      fe.set(err instanceof Error ? err.message : "Demo mode failed");
     } finally {
       setDemoBusy(false);
     }
@@ -103,6 +121,7 @@ export function LoginPage() {
           <Label htmlFor="login-email" className="text-zinc-300">Email</Label>
           <Input
             id="login-email" type="email" autoComplete="email" placeholder="you@studio.com"
+            aria-invalid={fe.isField("email") || undefined} aria-describedby={fe.isField("email") ? "login-error" : undefined}
             value={email} onChange={(e) => setEmail(e.target.value)}
             className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40"
           />
@@ -117,6 +136,7 @@ export function LoginPage() {
           <div className="relative">
             <Input
               id="login-password" type={showPw ? "text" : "password"} autoComplete="current-password" placeholder="••••••••"
+              aria-invalid={fe.isField("password") || undefined} aria-describedby={fe.isField("password") ? "login-error" : undefined}
               value={password} onChange={(e) => setPassword(e.target.value)}
               className="border-white/10 bg-black/40 pr-10 focus-visible:ring-violet-400/40"
             />
@@ -125,7 +145,7 @@ export function LoginPage() {
             </button>
           </div>
         </div>
-        {error && <p className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</p>}
+        {fe.err && <p {...fe.bind("login-error")} className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{fe.err.msg}</p>}
         <GradientButton type="submit" disabled={busy} className="w-full">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           {busy ? "Signing in…" : "Sign In"}
@@ -166,7 +186,7 @@ export function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const fe = useFormError();
   const [busy, setBusy] = useState(false);
 
   const pwStrength = (() => {
@@ -180,17 +200,17 @@ export function SignupPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    if (!name.trim()) return setError("Please tell us your name.");
-    if (!EMAIL_RE.test(email.trim())) return setError("Please enter a valid email address.");
-    if (password.length < 8) return setError("Password must be at least 8 characters.");
+    fe.clear();
+    if (!name.trim()) return fe.set("Please tell us your name.", "name");
+    if (!EMAIL_RE.test(email.trim())) return fe.set("Please enter a valid email address.", "email");
+    if (password.length < 8) return fe.set("Password must be at least 8 characters.", "password");
     setBusy(true);
     try {
       await register(name.trim(), email.trim(), password);
       toast.success("Account created — welcome to VisionCut AI!");
       router.navigate("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign up failed");
+      fe.set(err instanceof Error ? err.message : "Sign up failed");
     } finally {
       setBusy(false);
     }
@@ -201,17 +221,18 @@ export function SignupPage() {
       <form onSubmit={submit} className="space-y-4" noValidate>
         <div className="space-y-1.5">
           <Label htmlFor="signup-name" className="text-zinc-300">Name</Label>
-          <Input id="signup-name" autoComplete="name" placeholder="Alex Director" value={name} onChange={(e) => setName(e.target.value)} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
+          <Input id="signup-name" autoComplete="name" placeholder="Alex Director" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={fe.isField("name") || undefined} aria-describedby={fe.isField("name") ? "signup-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="signup-email" className="text-zinc-300">Email</Label>
-          <Input id="signup-email" type="email" autoComplete="email" placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
+          <Input id="signup-email" type="email" autoComplete="email" placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={fe.isField("email") || undefined} aria-describedby={fe.isField("email") ? "signup-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="signup-password" className="text-zinc-300">Password</Label>
           <div className="relative">
             <Input
               id="signup-password" type={showPw ? "text" : "password"} autoComplete="new-password" placeholder="At least 8 characters"
+              aria-invalid={fe.isField("password") || undefined} aria-describedby={fe.isField("password") ? "signup-error" : undefined}
               value={password} onChange={(e) => setPassword(e.target.value)}
               className="border-white/10 bg-black/40 pr-10 focus-visible:ring-violet-400/40"
             />
@@ -228,7 +249,7 @@ export function SignupPage() {
             </div>
           )}
         </div>
-        {error && <p className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</p>}
+        {fe.err && <p {...fe.bind("signup-error")} className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{fe.err.msg}</p>}
         <GradientButton type="submit" disabled={busy} className="w-full">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           {busy ? "Creating account…" : "Create Free Account"}
@@ -253,7 +274,7 @@ export function ResetPage() {
   const [password, setPassword] = useState("");
   const [stage, setStage] = useState<"request" | "confirm">("request");
   const [devToken, setDevToken] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const fe = useFormError();
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -269,8 +290,8 @@ export function ResetPage() {
 
   const request = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    if (!EMAIL_RE.test(email.trim())) return setError("Please enter a valid email address.");
+    fe.clear();
+    if (!EMAIL_RE.test(email.trim())) return fe.set("Please enter a valid email address.", "email");
     setBusy(true);
     try {
       const res = await fetch("/api/auth/reset-request", {
@@ -286,7 +307,7 @@ export function ResetPage() {
         setStage("confirm");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      fe.set(err instanceof Error ? err.message : "Request failed");
     } finally {
       setBusy(false);
     }
@@ -294,9 +315,9 @@ export function ResetPage() {
 
   const confirm = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    if (!token.trim()) return setError("Paste the reset token you received.");
-    if (password.length < 8) return setError("Password must be at least 8 characters.");
+    fe.clear();
+    if (!token.trim()) return fe.set("Paste the reset token you received.", "token");
+    if (password.length < 8) return fe.set("Password must be at least 8 characters.", "password");
     setBusy(true);
     try {
       const res = await fetch("/api/auth/reset-confirm", {
@@ -310,7 +331,7 @@ export function ResetPage() {
       toast.success("Password updated — you're signed in.");
       router.navigate("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Reset failed");
+      fe.set(err instanceof Error ? err.message : "Reset failed");
     } finally {
       setBusy(false);
     }
@@ -325,9 +346,9 @@ export function ResetPage() {
         <form onSubmit={request} className="space-y-4" noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="reset-email" className="text-zinc-300">Email</Label>
-            <Input id="reset-email" type="email" placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
+            <Input id="reset-email" type="email" placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={fe.isField("email") || undefined} aria-describedby={fe.isField("email") ? "reset-request-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
           </div>
-          {error && <p className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</p>}
+          {fe.err && <p {...fe.bind("reset-request-error")} className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{fe.err.msg}</p>}
           {notice && (
             <p className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">{notice}</p>
           )}
@@ -344,7 +365,7 @@ export function ResetPage() {
         <form onSubmit={confirm} className="space-y-4" noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="reset-token" className="text-zinc-300">Reset token</Label>
-            <Input id="reset-token" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Paste your token" className="border-white/10 bg-black/40 font-mono text-xs focus-visible:ring-violet-400/40" />
+            <Input id="reset-token" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Paste your token" aria-invalid={fe.isField("token") || undefined} aria-describedby={fe.isField("token") ? "reset-confirm-error" : undefined} className="border-white/10 bg-black/40 font-mono text-xs focus-visible:ring-violet-400/40" />
           </div>
           {devToken && (
             <p className="rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-2 font-mono text-[11px] leading-relaxed break-all text-violet-200">
@@ -353,9 +374,9 @@ export function ResetPage() {
           )}
           <div className="space-y-1.5">
             <Label htmlFor="reset-password" className="text-zinc-300">New password</Label>
-            <Input id="reset-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
+            <Input id="reset-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" aria-invalid={fe.isField("password") || undefined} aria-describedby={fe.isField("password") ? "reset-confirm-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
           </div>
-          {error && <p className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</p>}
+          {fe.err && <p {...fe.bind("reset-confirm-error")} className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{fe.err.msg}</p>}
           <GradientButton type="submit" disabled={busy} className="w-full">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {busy ? "Updating…" : "Set New Password"}
