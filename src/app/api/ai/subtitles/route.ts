@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import ZAI from "z-ai-web-dev-sdk";
 import { getSessionUser } from "@/lib/auth";
+import { transcribeAudio, transcribeStatus, TranscribeError } from "@/lib/transcribe";
 
 const schema = z.object({
   audioBase64: z.string().min(64).max(24_000_000), // ~18MB binary cap as base64
@@ -10,11 +10,22 @@ const schema = z.object({
 });
 
 /**
+ * GET: diagnostics for the transcription subsystem (masked, no secrets).
+ */
+export async function GET() {
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  return NextResponse.json({ status: transcribeStatus() });
+}
+
+/**
  * Automatic subtitles via speech-to-text.
  * The client extracts the audio track (WebAudio → WAV) and sends it as base64.
- * The ASR service returns plain text; timings are estimated by distributing
- * words proportionally across the provided duration. This is clearly labeled
- * as "estimated timing" in the editor UI.
+ * The backend is provider-agnostic (see src/lib/transcribe.ts): Z.ai platform
+ * ASR in the sandbox, or any configured provider (OpenAI-compatible, Deepgram,
+ * Gladia, AssemblyAI, ElevenLabs) elsewhere. Plain text is returned; timings
+ * are estimated by distributing words proportionally across the provided
+ * duration. This is clearly labeled as "estimated timing" in the editor UI.
  */
 export async function POST(req: NextRequest) {
   const user = await getSessionUser();
@@ -24,9 +35,12 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid input" }, { status: 400 });
     }
-    const zai = await ZAI.create();
-    const result = await zai.audio.asr.create({ file_base64: parsed.data.audioBase64 });
-    const text = (result.text || "").trim();
+    const result = await transcribeAudio({
+      audioBase64: parsed.data.audioBase64,
+      languageHint: parsed.data.languageHint,
+      mimeType: "audio/wav",
+    });
+    const text = result.text.trim();
     if (!text) {
       return NextResponse.json({ error: "No speech was detected in this audio." }, { status: 422 });
     }
@@ -45,8 +59,12 @@ export async function POST(req: NextRequest) {
       idx += WORDS_PER_CAPTION;
     }
 
-    return NextResponse.json({ text, captions: chunks, timingMode: "estimated" });
+    return NextResponse.json({ text, captions: chunks, timingMode: "estimated", provider: result.provider });
   } catch (err) {
+    if (err instanceof TranscribeError) {
+      console.error("[ai/subtitles]", err.status, err.message);
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error("[ai/subtitles]", err);
     return NextResponse.json({ error: "Speech recognition failed. Make sure the clip has a clear audio track." }, { status: 500 });
   }
