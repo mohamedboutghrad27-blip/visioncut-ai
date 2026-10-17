@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useEditor, makeTextClip } from "@/lib/editor/store";
 import { uid, type Clip } from "@/lib/editor/types";
 import { ingestBlob } from "@/lib/editor/media";
@@ -86,6 +86,7 @@ function StoryboardTool() {
   const [scenes, setScenes] = useState<Scene[] | null>(null);
   const [music, setMusic] = useState<string>("");
   const [genImage, setGenImage] = useState<number | null>(null);
+  const scenesRef = useRef<HTMLDivElement | null>(null);
 
   const run = async () => {
     if (script.trim().length < 20) {
@@ -103,7 +104,15 @@ function StoryboardTool() {
       if (!res.ok) throw new Error(data.error || "Storyboard failed");
       setScenes(data.storyboard.scenes);
       setMusic(data.storyboard.musicSuggestion || "");
-      toast.success("Storyboard ready", { description: `${data.storyboard.scenes.length} scenes generated.` });
+      // Results render below the controls — bring them into view so the
+      // generated scenes are immediately visible in the narrow sidebar.
+      requestAnimationFrame(() =>
+        setTimeout(() => scenesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60)
+      );
+      toast.success("Storyboard ready — scenes are shown below", {
+        description: `${data.storyboard.scenes.length} scenes generated.`,
+        duration: 8000,
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Storyboard generation failed");
     } finally {
@@ -201,8 +210,15 @@ function StoryboardTool() {
         </button>
       </div>
 
+      {busy && (
+        <p className="mt-2 flex items-center gap-1.5 rounded-lg border border-fuchsia-400/20 bg-fuchsia-500/10 px-2 py-1.5 text-[10px] leading-relaxed text-fuchsia-200" role="status">
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+          Directing your storyboard… this usually takes 10–20 seconds. Results will appear here.
+        </p>
+      )}
+
       {scenes && (
-        <div className="mt-3 space-y-2">
+        <div ref={scenesRef} className="mt-3 space-y-2 scroll-mt-2">
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{scenes.length} scenes</p>
             <button onClick={insertAll} className="rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 px-2.5 py-1 text-[10px] font-semibold text-fuchsia-200 hover:bg-fuchsia-500/20">
@@ -424,6 +440,7 @@ function SubtitlesTool() {
   const [captions, setCaptions] = useState<{ text: string; start: number; end: number }[] | null>(null);
   const [fontSize, setFontSize] = useState(0.038);
   const [color, setColor] = useState("#ffffff");
+  const captionsRef = useRef<HTMLDivElement | null>(null);
 
   const run = async () => {
     if (!clip || (clip.type !== "video" && clip.type !== "audio")) {
@@ -450,7 +467,15 @@ function SubtitlesTool() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Transcription failed");
       setCaptions(data.captions);
-      toast.success("Captions ready", { description: `${data.captions.length} caption segments (estimated timing).` });
+      // The caption list renders below the fold in the narrow sidebar —
+      // scroll it into view so results are immediately visible.
+      requestAnimationFrame(() =>
+        setTimeout(() => captionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60)
+      );
+      toast.success("Captions ready — the list is shown below", {
+        description: `${data.captions.length} caption segments (estimated timing).`,
+        duration: 8000,
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Transcription failed");
     } finally {
@@ -498,8 +523,14 @@ function SubtitlesTool() {
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Captions className="h-3.5 w-3.5" />}
         {busy ? "Transcribing audio…" : "Generate subtitles"}
       </button>
+      {busy && (
+        <p className="mt-2 flex items-center gap-1.5 rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2 py-1.5 text-[10px] leading-relaxed text-cyan-100" role="status">
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+          Transcribing the selected clip… this can take up to a minute for long clips.
+        </p>
+      )}
       {captions && (
-        <div className="mt-2.5">
+        <div ref={captionsRef} className="mt-2.5 scroll-mt-2">
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-1.5 text-[10px] text-zinc-400">
               Size
