@@ -1,0 +1,836 @@
+     1→"use client";
+     2→
+     3→import React, { useState } from "react";
+     4→import { useEditor, makeTextClip } from "@/lib/editor/store";
+     5→import { uid, type Clip } from "@/lib/editor/types";
+     6→import { ingestBlob } from "@/lib/editor/media";
+     7→import { getAssetUrl } from "@/lib/editor/idb";
+     8→import { extractAudioToWavBase64 } from "@/lib/editor/waveform";
+     9→import { ensureMediaUrl } from "@/lib/editor/engine";
+    10→import { toast } from "sonner";
+    11→import {
+    12→  Captions, Check, ChevronDown, Film, Info, Loader2, Mic, ScanSearch,
+    13→  Sparkles, Volume2, Wand2, X,
+    14→} from "lucide-react";
+    15→import { cn } from "@/lib/utils";
+    16→
+    17→type AiTab = "storyboard" | "text2video" | "subtitles" | "voiceover" | "smart" | "bg";
+    18→
+    19→const AI_TABS: { id: AiTab; label: string; icon: React.ElementType }[] = [
+    20→  { id: "storyboard", label: "Script → Video", icon: Wand2 },
+    21→  { id: "text2video", label: "Text to Video", icon: Film },
+    22→  { id: "subtitles", label: "Subtitles", icon: Captions },
+    23→  { id: "voiceover", label: "Voiceover", icon: Mic },
+    24→  { id: "smart", label: "Smart Edit", icon: ScanSearch },
+    25→  { id: "bg", label: "Background", icon: Sparkles },
+    26→];
+    27→
+    28→type Scene = {
+    29→  index: number;
+    30→  visual: string;
+    31→  narration: string;
+    32→  caption: string;
+    33→  transition: string;
+    34→  durationSeconds: number;
+    35→  imagePrompt: string;
+    36→};
+    37→
+    38→export function AiPanel() {
+    39→  const [tab, setTab] = useState<AiTab>("storyboard");
+    40→  return (
+    41→    <div className="p-3">
+    42→      <div className="mb-3 flex items-center gap-2 rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/8 p-2.5">
+    43→        <Sparkles className="h-3.5 w-3.5 shrink-0 text-fuchsia-300" />
+    44→        <p className="text-[10px] leading-relaxed text-fuchsia-200/80">
+    45→          AI tools call live services. Each tool reports real status — nothing is faked.
+    46→        </p>
+    47→      </div>
+    48→      <div className="grid grid-cols-3 gap-1.5">
+    49→        {AI_TABS.map((t) => (
+    50→          <button
+    51→            key={t.id}
+    52→            onClick={() => setTab(t.id)}
+    53→            className={cn(
+    54→              "flex flex-col items-center gap-1 rounded-xl border p-2 transition-all",
+    55→              tab === t.id
+    56→                ? "border-fuchsia-400/50 bg-fuchsia-500/15 text-white"
+    57→                : "border-white/8 bg-white/[0.02] text-zinc-500 hover:text-zinc-200"
+    58→            )}
+    59→          >
+    60→            <t.icon className="h-3.5 w-3.5" />
+    61→            <span className="text-[9px] font-semibold">{t.label}</span>
+    62→          </button>
+    63→        ))}
+    64→      </div>
+    65→
+    66→      <div className="mt-3">
+    67→        {tab === "storyboard" && <StoryboardTool />}
+    68→        {tab === "text2video" && <TextToVideoTool />}
+    69→        {tab === "subtitles" && <SubtitlesTool />}
+    70→        {tab === "voiceover" && <VoiceoverTool />}
+    71→        {tab === "smart" && <SmartTools />}
+    72→        {tab === "bg" && <BackgroundRemoval />}
+    73→      </div>
+    74→    </div>
+    75→  );
+    76→}
+    77→
+    78→/* ------------------------------------------------------------------ */
+    79→/* Script → Storyboard                                                  */
+    80→/* ------------------------------------------------------------------ */
+    81→
+    82→function StoryboardTool() {
+    83→  const [script, setScript] = useState("");
+    84→  const [style, setStyle] = useState("cinematic");
+    85→  const [busy, setBusy] = useState(false);
+    86→  const [scenes, setScenes] = useState<Scene[] | null>(null);
+    87→  const [music, setMusic] = useState<string>("");
+    88→  const [genImage, setGenImage] = useState<number | null>(null);
+    89→
+    90→  const run = async () => {
+    91→    if (script.trim().length < 20) {
+    92→      toast.error("Please paste a script of at least 20 characters.");
+    93→      return;
+    94→    }
+    95→    setBusy(true);
+    96→    try {
+    97→      const res = await fetch("/api/ai/storyboard", {
+    98→        method: "POST",
+    99→        headers: { "Content-Type": "application/json" },
+   100→        body: JSON.stringify({ script: script.trim(), style }),
+   101→      });
+   102→      const data = await res.json();
+   103→      if (!res.ok) throw new Error(data.error || "Storyboard failed");
+   104→      setScenes(data.storyboard.scenes);
+   105→      setMusic(data.storyboard.musicSuggestion || "");
+   106→      toast.success("Storyboard ready", { description: `${data.storyboard.scenes.length} scenes generated.` });
+   107→    } catch (err) {
+   108→      toast.error(err instanceof Error ? err.message : "Storyboard generation failed");
+   109→    } finally {
+   110→      setBusy(false);
+   111→    }
+   112→  };
+   113→
+   114→  const insertAll = () => {
+   115→    const store = useEditor.getState();
+   116→    const track = store.project.tracks.find((t) => t.type === "video" && !t.locked);
+   117→    if (!track) {
+   118→      toast.error("No unlocked video track available.");
+   119→      return;
+   120→    }
+   121→    let t = Math.max(store.playhead, store.project.duration);
+   122→    for (const scene of scenes || []) {
+   123→      store.addClip(
+   124→        {
+   125→          ...makeTextClip(track.id, "caption", t),
+   126→          duration: scene.durationSeconds,
+   127→          name: `Scene ${scene.index} — caption`,
+   128→          text: { content: scene.caption, fontSize: 0.04, color: "#ffffff", weight: 600, align: "center", family: "sans", bgOpacity: 0.55, letterSpacing: 0 },
+   129→          animation: scene.transition === "fade" ? "fadeBoth" : scene.transition === "slide" ? "slideLeft" : "none",
+   130→        },
+   131→        { select: false }
+   132→      );
+   133→      t += scene.durationSeconds;
+   134→    }
+   135→    toast.success(`${scenes?.length} scene captions added at ${t.toFixed(1)}s`);
+   136→  };
+   137→
+   138→  const generateSceneVisual = async (scene: Scene) => {
+   139→    setGenImage(scene.index);
+   140→    try {
+   141→      const res = await fetch("/api/ai/image", {
+   142→        method: "POST",
+   143→        headers: { "Content-Type": "application/json" },
+   144→        body: JSON.stringify({ prompt: scene.imagePrompt || scene.visual, aspectRatio: useEditor.getState().project.aspectRatio }),
+   145→      });
+   146→      const data = await res.json();
+   147→      if (!res.ok) throw new Error(data.error || "Image generation failed");
+   148→      const blob = await (await fetch(data.imageDataUrl)).blob();
+   149→      const { asset } = await ingestBlob(blob, {
+   150→        name: `Scene ${scene.index} visual`,
+   151→        kind: "image",
+   152→        mimeType: "image/png",
+   153→        origin: "ai",
+   154→      });
+   155→      // thumbnail from the data url directly
+   156→      const patched = { ...asset, thumbnail: data.imageDataUrl };
+   157→      const store = useEditor.getState();
+   158→      store.addAsset(patched);
+   159→      const track = store.project.tracks.find((t) => t.type === "video" && !t.locked);
+   160→      if (!track) throw new Error("No unlocked video track");
+   161→      const clip = store.addClipFromAsset(patched, track.id, Math.max(store.playhead, store.project.duration));
+   162→      if (clip) {
+   163→        store.updateClip(clip.id, { duration: scene.durationSeconds }, { history: false });
+   164→      }
+   165→      toast.success(`Scene ${scene.index} visual added to the timeline`);
+   166→    } catch (err) {
+   167→      toast.error(err instanceof Error ? err.message : "Scene visual failed");
+   168→    } finally {
+   169→      setGenImage(null);
+   170→    }
+   171→  };
+   172→
+   173→  return (
+   174→    <div>
+   175→      <textarea
+   176→        value={script}
+   177→        onChange={(e) => setScript(e.target.value)}
+   178→        rows={5}
+   179→        maxLength={6000}
+   180→        placeholder="Paste your script here — e.g. 'A 30-second ad for a surf school in Lisbon. Open on dawn waves, then a coach teaching a beginner…'"
+   181→        className="scrollbar-slim w-full resize-none rounded-xl border border-white/10 bg-black/40 p-3 text-[11px] leading-relaxed text-zinc-200 placeholder:text-zinc-600 focus:border-fuchsia-400/50 focus:outline-none"
+   182→      />
+   183→      <div className="mt-2 flex flex-wrap items-center gap-2">
+   184→        <select
+   185→          value={style}
+   186→          onChange={(e) => setStyle(e.target.value)}
+   187→          className="h-8 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/40 px-2 text-[11px] text-zinc-300 focus:outline-none"
+   188→          aria-label="Visual style"
+   189→        >
+   190→          {["cinematic", "documentary", "energetic", "minimal", "playful"].map((s) => (
+   191→            <option key={s} value={s} className="bg-[#101018]">{s}</option>
+   192→          ))}
+   193→        </select>
+   194→        <button
+   195→          onClick={run}
+   196→          disabled={busy}
+   197→          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-r from-fuchsia-600 to-violet-500 px-3 text-[11px] font-semibold text-white transition-all hover:brightness-110 disabled:opacity-60"
+   198→        >
+   199→          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+   200→          {busy ? "Directing…" : "Generate"}
+   201→        </button>
+   202→      </div>
+   203→
+   204→      {scenes && (
+   205→        <div className="mt-3 space-y-2">
+   206→          <div className="flex items-center justify-between">
+   207→            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{scenes.length} scenes</p>
+   208→            <button onClick={insertAll} className="rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 px-2.5 py-1 text-[10px] font-semibold text-fuchsia-200 hover:bg-fuchsia-500/20">
+   209→              Insert captions at playhead
+   210→            </button>
+   211→          </div>
+   212→          {scenes.map((s) => (
+   213→            <div key={s.index} className="rounded-xl border border-white/8 bg-white/[0.02] p-2.5">
+   214→              <div className="flex items-center justify-between gap-2">
+   215→                <span className="text-[10px] font-bold text-fuchsia-300">Scene {s.index} · {s.durationSeconds}s · {s.transition}</span>
+   216→                <button
+   217→                  onClick={() => generateSceneVisual(s)}
+   218→                  disabled={genImage !== null}
+   219→                  className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[9px] font-semibold text-zinc-300 hover:border-fuchsia-400/40 hover:text-white disabled:opacity-50"
+   220→                >
+   221→                  {genImage === s.index ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Sparkles className="h-2.5 w-2.5" />}
+   222→                  Visual
+   223→                </button>
+   224→              </div>
+   225→              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">{s.caption}</p>
+   226→              <p className="mt-0.5 text-[9px] italic leading-relaxed text-zinc-600">VO: {s.narration}</p>
+   227→            </div>
+   228→          ))}
+   229→          {music && (
+   230→            <p className="rounded-lg border border-white/6 bg-white/[0.02] p-2 text-[10px] text-zinc-500">
+   231→              <Volume2 className="mr-1 inline h-3 w-3 text-emerald-300" /> Music: {music}
+   232→            </p>
+   233→          )}
+   234→        </div>
+   235→      )}
+   236→    </div>
+   237→  );
+   238→}
+   239→
+   240→/* ------------------------------------------------------------------ */
+   241→/* Text → Video (async generation task)                                 */
+   242→/* ------------------------------------------------------------------ */
+   243→
+   244→function TextToVideoTool() {
+   245→  const [prompt, setPrompt] = useState("");
+   246→  const [duration, setDuration] = useState<5 | 10>(5);
+   247→  const [quality, setQuality] = useState<"speed" | "quality">("speed");
+   248→  const [withAudio, setWithAudio] = useState(false);
+   249→  const [busy, setBusy] = useState(false);
+   250→  const [status, setStatus] = useState<string | null>(null);
+   251→  const [pollCount, setPollCount] = useState(0);
+   252→
+   253→  const run = async () => {
+   254→    if (prompt.trim().length < 3) {
+   255→      toast.error("Describe the video you want first.");
+   256→      return;
+   257→    }
+   258→    setBusy(true);
+   259→    setPollCount(0);
+   260→    setStatus("Submitting generation task…");
+   261→    try {
+   262→      const res = await fetch("/api/ai/video", {
+   263→        method: "POST",
+   264→        headers: { "Content-Type": "application/json" },
+   265→        body: JSON.stringify({ prompt: prompt.trim(), duration, quality, withAudio, fps: 30 }),
+   266→      });
+   267→      const data = await res.json();
+   268→      if (!res.ok) throw new Error(data.error || "Could not start video generation");
+   269→      const taskId = data.taskId as string;
+   270→
+   271→      // Poll until done (max ~7 min)
+   272→      const maxPolls = 84;
+   273→      let videoUrl: string | null = null;
+   274→      for (let i = 1; i <= maxPolls; i++) {
+   275→        setPollCount(i);
+   276→        setStatus(`Generating… check ${i}/${maxPolls} (typically 1–4 min)`);
+   277→        await new Promise((r) => setTimeout(r, 5000));
+   278→        const sres = await fetch(`/api/ai/video-status/${taskId}`);
+   279→        const sdata = await sres.json();
+   280→        if (sdata.status === "SUCCESS") {
+   281→          videoUrl = sdata.videoUrl;
+   282→          break;
+   283→        }
+   284→        if (sdata.status === "FAILED") throw new Error(sdata.error || "Generation failed on the provider side.");
+   285→      }
+   286→      if (!videoUrl) throw new Error("Generation is taking longer than expected — try again later.");
+   287→
+   288→      setStatus("Downloading generated video…");
+   289→      const proxied = await fetch(`/api/ai/proxy-media?url=${encodeURIComponent(videoUrl)}`);
+   290→      if (!proxied.ok) throw new Error("Could not download the generated video.");
+   291→      const blob = await proxied.blob();
+   292→
+   293→      // probe duration
+   294→      const probeUrl = URL.createObjectURL(blob);
+   295→      const dur = await new Promise<number>((resolve) => {
+   296→        const v = document.createElement("video");
+   297→        v.preload = "metadata";
+   298→        v.src = probeUrl;
+   299→        v.onloadedmetadata = () => resolve(isFinite(v.duration) ? v.duration : 5);
+   300→        v.onerror = () => resolve(5);
+   301→        setTimeout(() => resolve(5), 8000);
+   302→      });
+   303→
+   304→      setStatus("Adding to timeline…");
+   305→      const { asset } = await ingestBlob(blob, {
+   306→        name: prompt.trim().slice(0, 32) + "…",
+   307→        kind: "video",
+   308→        mimeType: blob.type || "video/mp4",
+   309→        duration: dur,
+   310→        origin: "ai",
+   311→      });
+   312→      await new Promise<void>((resolve) => {
+   313→        const v = document.createElement("video");
+   314→        v.src = probeUrl;
+   315→        v.muted = true;
+   316→        v.currentTime = Math.min(1, dur * 0.1);
+   317→        v.onseeked = () => {
+   318→          const c = document.createElement("canvas");
+   319→          const scale = Math.min(1, 320 / (v.videoWidth || 320));
+   320→          c.width = Math.round((v.videoWidth || 320) * scale);
+   321→          c.height = Math.round((v.videoHeight || 180) * scale);
+   322→          c.getContext("2d")?.drawImage(v, 0, 0, c.width, c.height);
+   323→          const store = useEditor.getState();
+   324→          const assets = store.project.assets.map((a) => (a.id === asset.id ? { ...a, thumbnail: c.toDataURL("image/jpeg", 0.6) } : a));
+   325→          useEditor.setState({ project: { ...store.project, assets } });
+   326→          resolve();
+   327→        };
+   328→        setTimeout(resolve, 8000);
+   329→      });
+   330→      URL.revokeObjectURL(probeUrl);
+   331→
+   332→      const store = useEditor.getState();
+   333→      store.addAsset(asset); // register asset metadata in the project
+   334→      const url = await getAssetUrl(asset.id);
+   335→      const clip = store.addClipFromAsset(asset);
+   336→      if (clip && url) ensureMediaUrl(clip, url);
+   337→      toast.success("AI video added to the timeline");
+   338→      setStatus(null);
+   339→    } catch (err) {
+   340→      toast.error(err instanceof Error ? err.message : "Video generation failed");
+   341→      setStatus(null);
+   342→    } finally {
+   343→      setBusy(false);
+   344→    }
+   345→  };
+   346→
+   347→  return (
+   348→    <div>
+   349→      <textarea
+   350→        value={prompt}
+   351→        onChange={(e) => setPrompt(e.target.value)}
+   352→        rows={4}
+   353→        maxLength={1500}
+   354→        placeholder="e.g. A neon-lit cyberpunk street in the rain, camera slowly dollying forward, reflections on wet asphalt"
+   355→        className="scrollbar-slim w-full resize-none rounded-xl border border-white/10 bg-black/40 p-3 text-[11px] leading-relaxed text-zinc-200 placeholder:text-zinc-600 focus:border-fuchsia-400/50 focus:outline-none"
+   356→      />
+   357→      <div className="mt-2 grid grid-cols-3 gap-1.5">
+   358→        <label className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-zinc-400">
+   359→          Duration
+   360→          <select
+   361→            value={duration}
+   362→            onChange={(e) => setDuration(Number(e.target.value) as 5 | 10)}
+   363→            className="mt-0.5 block w-full bg-transparent text-[11px] font-semibold text-zinc-200 focus:outline-none"
+   364→          >
+   365→            <option value={5} className="bg-[#101018]">5s</option>
+   366→            <option value={10} className="bg-[#101018]">10s</option>
+   367→          </select>
+   368→        </label>
+   369→        <label className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-zinc-400">
+   370→          Quality
+   371→          <select
+   372→            value={quality}
+   373→            onChange={(e) => setQuality(e.target.value as "speed" | "quality")}
+   374→            className="mt-0.5 block w-full bg-transparent text-[11px] font-semibold text-zinc-200 focus:outline-none"
+   375→          >
+   376→            <option value="speed" className="bg-[#101018]">Fast</option>
+   377→            <option value="quality" className="bg-[#101018]">Detailed</option>
+   378→          </select>
+   379→        </label>
+   380→        <button
+   381→          onClick={() => setWithAudio((v) => !v)}
+   382→          className={cn(
+   383→            "rounded-lg border px-2 py-1.5 text-left text-[10px] transition-colors",
+   384→            withAudio ? "border-fuchsia-400/40 bg-fuchsia-500/10 text-fuchsia-200" : "border-white/10 bg-black/30 text-zinc-400"
+   385→          )}
+   386→        >
+   387→          AI audio
+   388→          <span className="mt-0.5 block text-[11px] font-semibold text-zinc-200">{withAudio ? "On" : "Off"}</span>
+   389→        </button>
+   390→      </div>
+   391→      <button
+   392→        onClick={run}
+   393→        disabled={busy}
+   394→        className="mt-2.5 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-500 text-[11px] font-semibold text-white transition-all hover:brightness-110 disabled:opacity-60"
+   395→      >
+   396→        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Film className="h-3.5 w-3.5" />}
+   397→        {busy ? "Generating video…" : "Generate video clip"}
+   398→      </button>
+   399→      {busy && status && (
+   400→        <div className="mt-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+   401→          <p className="text-[10px] text-zinc-400">{status}</p>
+   402→          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
+   403→            <div className="h-full w-1/3 animate-pulse rounded-full bg-gradient-to-r from-fuchsia-500 to-cyan-400" />
+   404→          </div>
+   405→        </div>
+   406→      )}
+   407→      <p className="mt-2 rounded-lg border border-white/6 bg-white/[0.02] p-2 text-[9px] leading-relaxed text-zinc-600">
+   408→        Real generation via a connected video model. Typical wait: 1–4 minutes for 5s clips. The result is added as a
+   409→        normal video clip you can trim and reposition.
+   410→      </p>
+   411→    </div>
+   412→  );
+   413→}
+   414→
+   415→/* ------------------------------------------------------------------ */
+   416→/* Automatic subtitles (ASR)                                            */
+   417→/* ------------------------------------------------------------------ */
+   418→
+   419→function SubtitlesTool() {
+   420→  const selection = useEditor((s) => s.selection);
+   421→  const clip = useEditor((s) => s.project.clips.find((c) => c.id === s.selection));
+   422→  const assets = useEditor((s) => s.project.assets);
+   423→  const [busy, setBusy] = useState(false);
+   424→  const [captions, setCaptions] = useState<{ text: string; start: number; end: number }[] | null>(null);
+   425→  const [fontSize, setFontSize] = useState(0.038);
+   426→  const [color, setColor] = useState("#ffffff");
+   427→
+   428→  const run = async () => {
+   429→    if (!clip || (clip.type !== "video" && clip.type !== "audio")) {
+   430→      toast.error("Select a video or audio clip in the timeline first.");
+   431→      return;
+   432→    }
+   433→    const asset = assets.find((a) => a.id === clip.assetId);
+   434→    if (!asset) {
+   435→      toast.error("The selected clip's media is missing — re-import it first.");
+   436→      return;
+   437→    }
+   438→    setBusy(true);
+   439→    try {
+   440→      const url = await getAssetUrl(asset.id);
+   441→      if (!url) throw new Error("Media file missing from local cache.");
+   442→      const blob = await (await fetch(url)).blob();
+   443→      const extracted = await extractAudioToWavBase64(blob);
+   444→      if (!extracted) throw new Error("Could not extract audio from this file in your browser.");
+   445→      const res = await fetch("/api/ai/subtitles", {
+   446→        method: "POST",
+   447→        headers: { "Content-Type": "application/json" },
+   448→        body: JSON.stringify({ audioBase64: extracted.base64, duration: extracted.duration }),
+   449→      });
+   450→      const data = await res.json();
+   451→      if (!res.ok) throw new Error(data.error || "Transcription failed");
+   452→      setCaptions(data.captions);
+   453→      toast.success("Captions ready", { description: `${data.captions.length} caption segments (estimated timing).` });
+   454→    } catch (err) {
+   455→      toast.error(err instanceof Error ? err.message : "Transcription failed");
+   456→    } finally {
+   457→      setBusy(false);
+   458→    }
+   459→  };
+   460→
+   461→  const insert = () => {
+   462→    const store = useEditor.getState();
+   463→    const track = store.project.tracks.find((t) => t.type === "video" && !t.locked);
+   464→    if (!track) {
+   465→      toast.error("Add an unlocked video track for captions.");
+   466→      return;
+   467→    }
+   468→    for (const cap of captions || []) {
+   469→      store.addClip(
+   470→        {
+   471→          ...makeTextClip(track.id, "caption", cap.start),
+   472→          duration: Math.max(0.6, cap.end - cap.start),
+   473→          name: `Caption`,
+   474→          text: { content: cap.text, fontSize, color, weight: 600, align: "center", family: "sans", bgOpacity: 0.55, letterSpacing: 0 },
+   475→        },
+   476→        { select: false }
+   477→      );
+   478→    }
+   479→    toast.success(`${captions?.length} caption clips added to the timeline`);
+   480→  };
+   481→
+   482→  return (
+   483→    <div>
+   484→      <div className="rounded-xl border border-white/8 bg-white/[0.02] p-2.5">
+   485→        <p className="text-[10px] text-zinc-400">
+   486→          {clip && (clip.type === "video" || clip.type === "audio") ? (
+   487→            <>Transcribe: <strong className="text-zinc-200">{clip.name}</strong></>
+   488→          ) : (
+   489→            "Select a video or audio clip in the timeline to transcribe."
+   490→          )}
+   491→        </p>
+   492→      </div>
+   493→      <button
+   494→        onClick={run}
+   495→        disabled={busy}
+   496→        className="mt-2 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-400 text-[11px] font-semibold text-white transition-all hover:brightness-110 disabled:opacity-60"
+   497→      >
+   498→        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Captions className="h-3.5 w-3.5" />}
+   499→        {busy ? "Transcribing audio…" : "Generate subtitles"}
+   500→      </button>
+   501→      {captions && (
+   502→        <div className="mt-2.5">
+   503→          <div className="flex items-center gap-2">
+   504→            <label className="flex items-center gap-1.5 text-[10px] text-zinc-400">
+   505→              Size
+   506→              <input
+   507→                type="range" min={0.025} max={0.07} step={0.002} value={fontSize}
+   508→                onChange={(e) => setFontSize(Number(e.target.value))}
+   509→                className="vc-range w-16"
+   510→              />
+   511→            </label>
+   512→            <input
+   513→              type="color" value={color} onChange={(e) => setColor(e.target.value)}
+   514→              className="h-6 w-8 cursor-pointer rounded border border-white/10 bg-transparent"
+   515→              aria-label="Caption color"
+   516→            />
+   517→            <button onClick={insert} className="ml-auto rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-500/20">
+   518→              Add all to timeline
+   519→            </button>
+   520→          </div>
+   521→          <div className="scrollbar-slim mt-2 max-h-48 space-y-1.5 overflow-y-auto">
+   522→            {captions.map((c, i) => (
+   523→              <div key={i} className="flex items-start gap-2 rounded-lg border border-white/6 bg-white/[0.02] p-2">
+   524→                <span className="font-mono text-[9px] text-cyan-300/80">{c.start.toFixed(1)}s</span>
+   525→                <span className="flex-1 text-[10px] leading-snug text-zinc-300">{c.text}</span>
+   526→              </div>
+   527→            ))}
+   528→          </div>
+   529→          <p className="mt-1.5 text-[9px] text-zinc-600">Timing is estimated from audio duration — adjust per clip in Timing.</p>
+   530→        </div>
+   531→      )}
+   532→    </div>
+   533→  );
+   534→}
+   535→
+   536→/* ------------------------------------------------------------------ */
+   537→/* AI Voiceover (TTS)                                                   */
+   538→/* ------------------------------------------------------------------ */
+   539→
+   540→const VOICES = [
+   541→  { id: "tongtong", label: "Tongtong (female, warm)" },
+   542→];
+   543→
+   544→function VoiceoverTool() {
+   545→  const [text, setText] = useState("");
+   546→  const [voice, setVoice] = useState("tongtong");
+   547→  const [speed, setSpeed] = useState(1);
+   548→  const [busy, setBusy] = useState(false);
+   549→  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+   550→
+   551→  const run = async (previewOnly: boolean) => {
+   552→    if (!text.trim()) {
+   553→      toast.error("Enter the narration text first.");
+   554→      return;
+   555→    }
+   556→    setBusy(true);
+   557→    try {
+   558→      const res = await fetch("/api/ai/voiceover", {
+   559→        method: "POST",
+   560→        headers: { "Content-Type": "application/json" },
+   561→        body: JSON.stringify({ text: text.trim(), voice, speed }),
+   562→      });
+   563→      const data = await res.json();
+   564→      if (!res.ok) throw new Error(data.error || "Voiceover failed");
+   565→      const blob = await (await fetch(data.audioDataUrl)).blob();
+   566→
+   567→      if (previewOnly) {
+   568→        if (previewUrl) URL.revokeObjectURL(previewUrl);
+   569→        const url = URL.createObjectURL(blob);
+   570→        setPreviewUrl(url);
+   571→        const audio = new Audio(url);
+   572→        audio.play().catch(() => toast.error("Browser blocked audio preview — add it to the timeline instead."));
+   573→        return;
+   574→      }
+   575→
+   576→      // probe duration
+   577→      const probeUrl = URL.createObjectURL(blob);
+   578→      const dur = await new Promise<number>((resolve) => {
+   579→        const a = new Audio();
+   580→        a.src = probeUrl;
+   581→        a.onloadedmetadata = () => resolve(isFinite(a.duration) ? a.duration : 3);
+   582→        a.onerror = () => resolve(3);
+   583→        setTimeout(() => resolve(3), 8000);
+   584→      });
+   585→      URL.revokeObjectURL(probeUrl);
+   586→
+   587→      const { asset } = await ingestBlob(blob, {
+   588→        name: `Voiceover — ${text.trim().slice(0, 24)}…`,
+   589→        kind: "audio",
+   590→        mimeType: blob.type || "audio/wav",
+   591→        duration: dur,
+   592→        origin: "ai",
+   593→      });
+   594→      const store = useEditor.getState();
+   595→      store.addAsset(asset); // register asset metadata in the project
+   596→      const audioTrack =
+   597→        store.project.tracks.find((t) => t.type === "audio" && !t.locked) ||
+   598→        store.project.tracks.find((t) => t.type === "audio");
+   599→      const clip = store.addClipFromAsset(asset, audioTrack?.id, store.playhead);
+   600→      if (clip) {
+   601→        const url = await getAssetUrl(asset.id);
+   602→        if (url) ensureMediaUrl(clip, url);
+   603→      }
+   604→      toast.success("Voiceover added to the audio track");
+   605→    } catch (err) {
+   606→      toast.error(err instanceof Error ? err.message : "Voiceover generation failed");
+   607→    } finally {
+   608→      setBusy(false);
+   609→    }
+   610→  };
+   611→
+   612→  return (
+   613→    <div>
+   614→      <textarea
+   615→        value={text}
+   616→        onChange={(e) => setText(e.target.value)}
+   617→        rows={4}
+   618→        maxLength={2000}
+   619→        placeholder="Type the narration… e.g. 'Three tips that will change how you edit videos forever.'"
+   620→        className="scrollbar-slim w-full resize-none rounded-xl border border-white/10 bg-black/40 p-3 text-[11px] leading-relaxed text-zinc-200 placeholder:text-zinc-600 focus:border-fuchsia-400/50 focus:outline-none"
+   621→      />
+   622→      <div className="mt-2 grid grid-cols-2 gap-1.5">
+   623→        <label className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-zinc-400">
+   624→          Voice
+   625→          <select
+   626→            value={voice}
+   627→            onChange={(e) => setVoice(e.target.value)}
+   628→            className="mt-0.5 block w-full bg-transparent text-[11px] font-semibold text-zinc-200 focus:outline-none"
+   629→          >
+   630→            {VOICES.map((v) => (
+   631→              <option key={v.id} value={v.id} className="bg-[#101018]">{v.label}</option>
+   632→            ))}
+   633→          </select>
+   634→        </label>
+   635→        <label className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-zinc-400">
+   636→          Speed · {speed.toFixed(1)}×
+   637→          <input
+   638→            type="range" min={0.5} max={2} step={0.1} value={speed}
+   639→            onChange={(e) => setSpeed(Number(e.target.value))}
+   640→            className="vc-range mt-1.5 w-full"
+   641→          />
+   642→        </label>
+   643→      </div>
+   644→      <div className="mt-2 grid grid-cols-2 gap-1.5">
+   645→        <button
+   646→          onClick={() => run(true)}
+   647→          disabled={busy}
+   648→          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-white/[0.04] text-[11px] font-semibold text-zinc-200 transition-all hover:bg-white/[0.08] disabled:opacity-60"
+   649→        >
+   650→          <Volume2 className="h-3.5 w-3.5" /> Preview
+   651→        </button>
+   652→        <button
+   653→          onClick={() => run(false)}
+   654→          disabled={busy}
+   655→          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-500 text-[11px] font-semibold text-white transition-all hover:brightness-110 disabled:opacity-60"
+   656→        >
+   657→          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
+   658→          {busy ? "Generating…" : "Add to timeline"}
+   659→        </button>
+   660→      </div>
+   661→    </div>
+   662→  );
+   663→}
+   664→
+   665→/* ------------------------------------------------------------------ */
+   666→/* Smart editing                                                        */
+   667→/* ------------------------------------------------------------------ */
+   668→
+   669→function SmartTools() {
+   670→  const selection = useEditor((s) => s.selection);
+   671→  const clip = useEditor((s) => s.project.clips.find((c) => c.id === s.selection));
+   672→  const [busy, setBusy] = useState(false);
+   673→
+   674→  const removeSilences = async () => {
+   675→    if (!clip || (clip.type !== "video" && clip.type !== "audio")) {
+   676→      toast.error("Select a video or audio clip with audio first.");
+   677→      return;
+   678→    }
+   679→    const peaks = clip.peaks;
+   680→    if (!peaks || peaks.length === 0) {
+   681→      toast.error("No waveform data yet — wait a moment for analysis, then try again.");
+   682→      return;
+   683→    }
+   684→    setBusy(true);
+   685→    try {
+   686→      const store = useEditor.getState();
+   687→      const asset = store.project.assets.find((a) => a.id === clip.assetId);
+   688→      const sourceDur = asset?.duration ?? clip.duration;
+   689→      const bucketDur = sourceDur / peaks.length;
+   690→      const THRESHOLD = 0.055;
+   691→      const MIN_SILENCE = Math.max(1, Math.round(0.45 / bucketDur));
+   692→      const MIN_KEEP = Math.max(1, Math.round(0.3 / bucketDur));
+   693→
+   694→      // find silent runs
+   695→      const silent: boolean[] = peaks.map((p) => p < THRESHOLD);
+   696→      const keepSegments: { start: number; end: number }[] = [];
+   697→      let i = 0;
+   698→      let cursor = 0; // source seconds
+   699→      while (i < silent.length) {
+   700→        if (silent[i]) {
+   701→          let j = i;
+   702→          while (j < silent.length && silent[j]) j++;
+   703→          const silenceLen = j - i;
+   704→          if (silenceLen >= MIN_SILENCE) {
+   705→            const silenceStart = i * bucketDur;
+   706→            const silenceEnd = j * bucketDur;
+   707→            if (silenceStart - cursor > 0.05) {
+   708→              keepSegments.push({ start: cursor, end: silenceStart });
+   709→            }
+   710→            cursor = silenceEnd;
+   711→          }
+   712→          i = j;
+   713→        } else i++;
+   714→      }
+   715→      if (cursor < sourceDur - 0.05) keepSegments.push({ start: cursor, end: sourceDur });
+   716→      const meaningful = keepSegments.filter((s) => s.end - s.start >= 0.15);
+   717→      if (meaningful.length === 0) {
+   718→        toast.info("No significant silence found in this clip.");
+   719→        return;
+   720→      }
+   721→
+   722→      store.commit();
+   723→      // replace the original clip with keep-segments
+   724→      const trackId = clip.trackId;
+   725→      let timelineT = clip.start;
+   726→      const newClips: Clip[] = meaningful.map((seg, idx) => ({
+   727→        ...structuredClone(clip),
+   728→        id: uid(),
+   729→        name: idx === 0 ? clip.name : `${clip.name} (${idx + 1})`,
+   730→        start: timelineT,
+   731→        duration: (seg.end - seg.start) / clip.speed,
+   732→        trimStart: clip.trimStart + seg.start,
+   733→        peaks: undefined,
+   734→      }));
+   735→      for (const c of newClips) timelineT += c.duration;
+   736→
+   737→      const rest = store.project.clips.filter((c) => c.id !== clip.id);
+   738→      // shift subsequent clips on the same track by the removed time
+   739→      const removedTotal = clip.duration - (timelineT - clip.start);
+   740→      const shifted = rest.map((c) =>
+   741→        c.trackId === trackId && c.start >= clip.start + clip.duration - 1e-3
+   742→          ? { ...c, start: Math.max(0, c.start - removedTotal) }
+   743→          : c
+   744→      );
+   745→      useEditor.setState({
+   746→        project: {
+   747→          ...store.project,
+   748→          clips: [...shifted, ...newClips],
+   749→          duration: Math.max(0, store.project.duration - removedTotal),
+   750→        },
+   751→        saveStatus: "unsaved",
+   752→      });
+   753→      toast.success(`Removed ${newClips.length - 1 || "no"} silence gap${newClips.length === 2 ? "" : "s"}`, {
+   754→        description: `Clip shortened by ${removedTotal.toFixed(1)}s.`,
+   755→      });
+   756→    } finally {
+   757→      setBusy(false);
+   758→    }
+   759→  };
+   760→
+   761→  return (
+   762→    <div className="space-y-2">
+   763→      <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+   764→        <div className="flex items-center justify-between gap-2">
+   765→          <div>
+   766→            <p className="text-[11px] font-semibold text-zinc-100">Silence removal</p>
+   767→            <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-500">
+   768→              Detects quiet gaps in the selected clip&apos;s waveform and tightens them automatically.
+   769→            </p>
+   770→          </div>
+   771→          <button
+   772→            onClick={removeSilences}
+   773→            disabled={busy}
+   774→            className="shrink-0 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-400 px-3 py-1.5 text-[10px] font-semibold text-white transition-all hover:brightness-110 disabled:opacity-60"
+   775→          >
+   776→            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : "Run"}
+   777→          </button>
+   778→        </div>
+   779→      </div>
+   780→
+   781→      {[
+   782→        { name: "Scene detection", desc: "Auto-split long footage at visual cut points" },
+   783→        { name: "Auto reframe", desc: "Re-crop landscape video to vertical subject tracking" },
+   784→        { name: "Highlight extraction", desc: "Pick the most engaging moments from long recordings" },
+   785→      ].map((t) => (
+   786→        <div key={t.name} className="rounded-xl border border-white/8 bg-white/[0.02] p-3 opacity-70">
+   787→          <div className="flex items-center justify-between gap-2">
+   788→            <div>
+   789→              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-300">
+   790→                {t.name}
+   791→                <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-amber-300">
+   792→                  Preview
+   793→                </span>
+   794→              </p>
+   795→              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-600">{t.desc}</p>
+   796→            </div>
+   797→            <button disabled className="shrink-0 cursor-not-allowed rounded-lg border border-white/10 px-3 py-1.5 text-[10px] font-semibold text-zinc-600">
+   798→              Unavailable
+   799→            </button>
+   800→          </div>
+   801→        </div>
+   802→      ))}
+   803→      <p className="rounded-lg border border-white/6 bg-white/[0.02] p-2 text-[9px] leading-relaxed text-zinc-600">
+   804→        Preview tools are labeled honestly: they require additional processing services that aren&apos;t connected in this
+   805→        deployment, so their buttons are disabled rather than pretending to work.
+   806→      </p>
+   807→    </div>
+   808→  );
+   809→}
+   810→
+   811→/* ------------------------------------------------------------------ */
+   812→/* Background removal (preview)                                         */
+   813→/* ------------------------------------------------------------------ */
+   814→
+   815→function BackgroundRemoval() {
+   816→  return (
+   817→    <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+   818→      <p className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-200">
+   819→        Background removal
+   820→        <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-amber-300">
+   821→          Preview
+   822→        </span>
+   823→      </p>
+   824→      <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-500">
+   825→        AI subject segmentation needs a dedicated processing model that isn&apos;t connected in this deployment. Rather
+   826→        than simulating results, this capability is clearly marked unavailable. In the meantime:
+   827→      </p>
+   828→      <ul className="mt-2 space-y-1 text-[10px] leading-relaxed text-zinc-500">
+   829→        <li className="flex gap-1.5"><Check className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" /> Use chroma-style compositing via color grading on solid backgrounds</li>
+   830→        <li className="flex gap-1.5"><Check className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" /> Layer AI-generated images (Script → Video scenes) as clean backdrops</li>
+   831→        <li className="flex gap-1.5"><Check className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" /> Vignette + blur effects can isolate subjects visually</li>
+   832→      </ul>
+   833→    </div>
+   834→  );
+   835→}
+   836→
