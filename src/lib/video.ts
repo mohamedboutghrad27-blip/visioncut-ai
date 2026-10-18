@@ -8,8 +8,12 @@
  *
  * Env vars:
  *   VIDEO_PROVIDER         auto (default) | zai | fal | wavespeed | kie | pixverse | higgsfield
- *   VIDEO_API_KEY          API key for the external video provider. For higgsfield this is
- *                          the full "keyId:keySecret" pair from console.higgsfield.ai
+ *   VIDEO_API_KEY          Shared fallback key for whichever external provider is selected.
+ *   HIGGSFIELD_API_KEY     Per-provider keys — each wins over VIDEO_API_KEY for its own
+ *   FAL_API_KEY            platform, so several platforms can coexist and `auto` tries
+ *   WAVESPEED_API_KEY      every provider that has a usable key. For higgsfield the key is
+ *   KIE_API_KEY            the full "keyId:keySecret" pair from console.higgsfield.ai
+ *   PIXVERSE_API_KEY
  *   HIGGSFIELD_VIDEO_MODEL default "alibaba/wan-3.0/text-to-video" (model slug from /models)
  *   FAL_VIDEO_MODEL        default "fal-ai/wan-t2v"  (fal.ai queue model id)
  *   WAVESPEED_VIDEO_MODEL  default "wavespeed-ai/wan-2.1-t2v-480p"
@@ -80,6 +84,29 @@ function env(name: string): string | undefined {
 
 function videoKey(): string | undefined {
   return env("VIDEO_API_KEY");
+}
+
+/**
+ * Per-provider key resolution: a dedicated <PROVIDER>_API_KEY wins, then the
+ * shared VIDEO_API_KEY. This lets several platforms coexist — e.g. a Higgsfield
+ * key on VIDEO_API_KEY plus a WaveSpeed key on WAVESPEED_API_KEY — and `auto`
+ * will try every provider that has a usable key.
+ */
+function providerKey(provider: VideoProviderName): string | undefined {
+  switch (provider) {
+    case "higgsfield":
+      return env("HIGGSFIELD_API_KEY") || videoKey();
+    case "fal":
+      return env("FAL_API_KEY") || videoKey();
+    case "wavespeed":
+      return env("WAVESPEED_API_KEY") || videoKey();
+    case "kie":
+      return env("KIE_API_KEY") || videoKey();
+    case "pixverse":
+      return env("PIXVERSE_API_KEY") || videoKey();
+    case "zai":
+      return undefined; // sandbox SDK manages its own credentials
+  }
 }
 
 function providerModel(provider: VideoProviderName): string {
@@ -520,7 +547,9 @@ async function pollHiggsfield(id: string, key: string): Promise<VideoPollResult>
 function providerOrder(selected: VideoProviderSetting): VideoProviderName[] {
   if (selected !== "auto") return [selected];
   const order: VideoProviderName[] = [];
-  if (videoKey()) order.push("higgsfield", "fal", "wavespeed", "kie", "pixverse");
+  for (const p of ["higgsfield", "fal", "wavespeed", "kie", "pixverse"] as VideoProviderName[]) {
+    if (providerKey(p)) order.push(p);
+  }
   order.push("zai");
   return order;
 }
@@ -529,7 +558,7 @@ async function submitProvider(
   provider: VideoProviderName,
   opts: VideoSubmitOptions,
 ): Promise<VideoSubmitResult> {
-  const key = videoKey();
+  const key = providerKey(provider);
   const model = providerModel(provider);
   switch (provider) {
     case "fal":
@@ -596,7 +625,7 @@ export async function pollVideoGeneration(taskId: string): Promise<VideoPollResu
   const sep = taskId.indexOf(":");
   const provider = (sep === -1 ? "zai" : taskId.slice(0, sep)) as VideoProviderName;
   const id = sep === -1 ? taskId : taskId.slice(sep + 1);
-  const key = videoKey();
+  const key = providerKey(provider);
 
   if (!/^[a-z0-9A-Z_\-\.]+$/.test(id)) {
     throw new VideoError("Malformed task id.", 400, "video");
@@ -630,6 +659,13 @@ export function videoDiagnostics() {
   return {
     provider: env("VIDEO_PROVIDER") || "auto",
     hasKey: !!videoKey(),
+    keys: {
+      higgsfield: !!env("HIGGSFIELD_API_KEY") || !!videoKey(),
+      fal: !!env("FAL_API_KEY") || !!videoKey(),
+      wavespeed: !!env("WAVESPEED_API_KEY") || !!videoKey(),
+      kie: !!env("KIE_API_KEY") || !!videoKey(),
+      pixverse: !!env("PIXVERSE_API_KEY") || !!videoKey(),
+    },
     models: {
       higgsfield: providerModel("higgsfield"),
       fal: providerModel("fal"),
