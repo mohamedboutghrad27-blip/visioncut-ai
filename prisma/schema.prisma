@@ -20,6 +20,7 @@ model User {
   updatedAt    DateTime        @updatedAt
   projects     Project[]
   resets       PasswordReset[]
+  mediaFiles   MediaFile[]
 }
 
 model Project {
@@ -45,4 +46,29 @@ model PasswordReset {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
+}
+
+// Cloud backup of editor media blobs (chunked to fit serverless body limits).
+// MediaFile.id mirrors the client asset id (as_...).
+model MediaFile {
+  id        String       @id
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  mimeType  String
+  size      Int
+  chunks    MediaChunk[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([userId])
+}
+
+model MediaChunk {
+  fileId String
+  idx    Int
+  data   Bytes
+  file   MediaFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@id([fileId, idx])
 }

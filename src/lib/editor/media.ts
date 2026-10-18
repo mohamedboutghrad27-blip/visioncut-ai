@@ -2,6 +2,7 @@
 
 import { type Asset, MAX_FILE_SIZE, ACCEPTED_VIDEO, ACCEPTED_AUDIO, ACCEPTED_IMAGE } from "./types";
 import { storeBlob } from "./idb";
+import { queueCloudUpload } from "./cloud";
 import { uid } from "./types";
 
 export type IngestResult = { asset: Asset };
@@ -136,6 +137,8 @@ export async function ingestFile(file: File): Promise<IngestResult> {
       origin: "upload",
       createdAt: Date.now(),
     };
+    // Mirror to the cloud so other browsers/devices can restore this asset.
+    queueCloudUpload(id, file, { name: asset.name, mimeType: asset.mimeType });
     return { asset };
   } finally {
     URL.revokeObjectURL(objectUrl);
@@ -159,6 +162,8 @@ export async function ingestBlob(
     origin: meta.origin || "ai",
     createdAt: Date.now(),
   };
+  // Mirror to the cloud (AI-generated media too — e.g. scene visuals, voiceovers).
+  queueCloudUpload(id, blob, { name: asset.name, mimeType: asset.mimeType });
   return { asset };
 }
 

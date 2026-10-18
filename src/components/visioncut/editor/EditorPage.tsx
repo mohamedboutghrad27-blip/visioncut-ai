@@ -86,8 +86,8 @@ export function EditorPage({ projectId }: { projectId: string }) {
         );
         if (missing > 0) {
           setMissingMedia(true);
-          toast.warning(`${missing} media file${missing > 1 ? "s" : ""} missing from local cache`, {
-            description: "Uploaded media lives in this browser's storage. Re-import the files to restore those clips.",
+          toast.warning(`${missing} media file${missing > 1 ? "s" : ""} could not be restored`, {
+            description: "These files are not in this browser's cache nor the cloud backup. Re-import them to restore those clips.",
           });
         }
 
@@ -245,7 +245,7 @@ export function EditorPage({ projectId }: { projectId: string }) {
       {missingMedia && (
         <div className="flex items-center justify-center gap-2 border-b border-amber-400/20 bg-amber-400/10 px-4 py-1.5 text-[11px] text-amber-200">
           <AlertTriangle className="h-3.5 w-3.5" />
-          Some media files are missing from this browser&apos;s cache — clips referencing them will show black until re-imported.
+          Some media files could not be restored in this browser — clips referencing them will show black until re-imported.
         </div>
       )}
       <div className="min-h-0 flex-1">

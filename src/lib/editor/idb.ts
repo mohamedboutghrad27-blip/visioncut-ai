@@ -67,11 +67,40 @@ export async function storeBlob(blob: Blob): Promise<string> {
 /* In-memory object URL registry (avoid re-creating URLs for the same asset) */
 const urlCache = new Map<string, string>();
 
+/* Cloud restore (see cloud.ts / /api/media): only used when the local blob is
+ * missing — e.g. project opened from another browser or after cache eviction.
+ * In-flight de-dup prevents parallel clips from fetching the same asset. */
+const cloudFetches = new Map<string, Promise<Blob | null>>();
+
+function restoreFromCloud(id: string): Promise<Blob | null> {
+  let p = cloudFetches.get(id);
+  if (!p) {
+    p = (async () => {
+      try {
+        const res = await fetch(`/api/media/${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        return blob && blob.size > 0 ? blob : null;
+      } catch {
+        return null;
+      }
+    })().finally(() => cloudFetches.delete(id));
+    cloudFetches.set(id, p);
+  }
+  return p;
+}
+
 export async function getAssetUrl(id: string): Promise<string | null> {
   const cached = urlCache.get(id);
   if (cached) return cached;
-  const blob = await getAssetBlob(id);
-  if (!blob) return null;
+  let blob = await getAssetBlob(id);
+  if (!blob) {
+    // Local cache miss — transparently restore from the cloud backup,
+    // cache it locally, then serve as usual.
+    blob = await restoreFromCloud(id);
+    if (!blob) return null;
+    await putAssetBlob(id, blob);
+  }
   const url = URL.createObjectURL(blob);
   urlCache.set(id, url);
   return url;
