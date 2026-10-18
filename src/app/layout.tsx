@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -99,7 +100,10 @@ export default function RootLayout({
             next/font import-map resolution on Vercel — keep this out of <head>. */}
         <script dangerouslySetInnerHTML={{ __html: 'document.documentElement.classList.add("js");' }} />
         {children}
+        {/* Radix toasts (use-toast) + Sonner toasts (toast from "sonner") — the app
+            fires BOTH kinds, so both renderers must be mounted or messages vanish. */}
         <Toaster />
+        <SonnerToaster position="bottom-right" richColors closeButton />
       </body>
     </html>
   );

@@ -3,30 +3,27 @@
  *
  * Mirrors src/lib/transcribe.ts: the text-generation backend is selected via
  * env vars so the same build works in the Z.ai sandbox (platform SDK) and on
- * any hosting with a bring-your-own key (OpenRouter and any OpenAI-compatible
+ * any hosting with a bring-your-own key (any OpenAI-compatible
  * chat-completions host).
  *
  * Env vars:
- *   SCRIPT_PROVIDER     auto (default) | openrouter | zai | custom
- *   OPENROUTER_API_KEY  OpenRouter API key (sk-or-v1-...)
- *   OPENROUTER_MODEL    model id, default nvidia/nemotron-3.5-super-vl:free
- *   OPENROUTER_BASE_URL defaults to https://openrouter.ai/api/v1
+ *   SCRIPT_PROVIDER     auto (default) | zai | custom
  *   CUSTOM_LLM_BASE_URL any OpenAI-compatible chat-completions host (custom)
+ *   CUSTOM_LLM_API_KEY  API key for `custom`
  *   CUSTOM_LLM_MODEL    model id for `custom`
  *
  * `auto` resolution order:
- *   1. `openrouter` when OPENROUTER_API_KEY is set
- *   2. `custom` when CUSTOM_LLM_BASE_URL (+ key) are set
- *   3. `zai` when a Z.ai platform config is available (sandbox)
- *   4. otherwise a clear error explaining what to configure
+ *   1. `custom` when CUSTOM_LLM_BASE_URL (+ key) are set
+ *   2. `zai` when a Z.ai platform config is available (sandbox)
+ *   3. otherwise a clear error explaining what to configure
  *
- * When a provider is pinned (openrouter/custom/zai) it is used exclusively;
+ * When a provider is pinned (custom/zai) it is used exclusively;
  * in `auto` mode a failing provider falls through to the next candidate.
  */
 
 import ZAI from "z-ai-web-dev-sdk";
 
-export type LlmProvider = "auto" | "openrouter" | "zai" | "custom";
+export type LlmProvider = "auto" | "zai" | "custom";
 
 export interface LlmMessage {
   role: "system" | "user" | "assistant";
@@ -35,7 +32,7 @@ export interface LlmMessage {
 
 export interface LlmResult {
   content: string;
-  provider: "openrouter" | "zai" | "custom";
+  provider: "zai" | "custom";
   model: string;
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number };
 }
@@ -51,8 +48,6 @@ export class LlmError extends Error {
   }
 }
 
-export const DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3.5-super-vl:free";
-
 const DEFAULT_TIMEOUT_MS = 100_000;
 
 function env(name: string): string | undefined {
@@ -60,17 +55,8 @@ function env(name: string): string | undefined {
   return v && v.trim() ? v.trim() : undefined;
 }
 
-function openrouterKey(): string | undefined {
-  return env("OPENROUTER_API_KEY");
-}
-
-function openrouterModel(): string {
-  return env("OPENROUTER_MODEL") || DEFAULT_OPENROUTER_MODEL;
-}
-
 export interface LlmDiagnostics {
   provider: string;
-  openrouter: { hasKey: boolean; model: string; baseUrl: string };
   custom: { hasKey: boolean; hasBaseUrl: boolean; model: string };
   zai: { available: boolean };
 }
@@ -79,11 +65,6 @@ export interface LlmDiagnostics {
 export function llmDiagnostics(): LlmDiagnostics {
   return {
     provider: env("SCRIPT_PROVIDER") || "auto",
-    openrouter: {
-      hasKey: !!openrouterKey(),
-      model: openrouterModel(),
-      baseUrl: env("OPENROUTER_BASE_URL") || "https://openrouter.ai/api/v1",
-    },
     custom: {
       hasKey: !!env("CUSTOM_LLM_API_KEY"),
       hasBaseUrl: !!env("CUSTOM_LLM_BASE_URL"),
@@ -94,7 +75,7 @@ export function llmDiagnostics(): LlmDiagnostics {
 }
 
 /* ------------------------------------------------------------------ */
-/* OpenRouter / OpenAI-compatible chat completions                     */
+/* OpenAI-compatible chat completions (custom host)                    */
 /* ------------------------------------------------------------------ */
 
 interface OpenAIChatResponse {
@@ -109,13 +90,12 @@ interface OpenAIChatResponse {
 
 async function chatCompletionViaOpenAICompat(
   opts: {
-    provider: "openrouter" | "custom";
+    provider: "custom";
     baseUrl: string;
     apiKey: string;
     model: string;
     messages: LlmMessage[];
     temperature?: number;
-    extraHeaders?: Record<string, string>;
   },
 ): Promise<LlmResult> {
   const { provider, baseUrl, apiKey, model, messages } = opts;
@@ -129,14 +109,6 @@ async function chatCompletionViaOpenAICompat(
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        ...(provider === "openrouter"
-          ? {
-              // OpenRouter app-attribution headers (optional but recommended)
-              "HTTP-Referer": env("APP_PUBLIC_URL") || "https://visioncut.ai",
-              "X-Title": "VisionCut AI",
-            }
-          : {}),
-        ...(opts.extraHeaders || {}),
       },
       body: JSON.stringify({
         model,
@@ -212,7 +184,17 @@ async function chatCompletionViaOpenAICompat(
 /* ------------------------------------------------------------------ */
 
 async function chatCompletionViaZai(messages: LlmMessage[], temperature?: number): Promise<LlmResult> {
-  const zai = await ZAI.create();
+  let zai: Awaited<ReturnType<typeof ZAI.create>>;
+  try {
+    zai = await ZAI.create();
+  } catch {
+    throw new LlmError(
+      "Script generation has no LLM provider on this server (the built-in engine only works in its own sandbox). " +
+        "Configure any OpenAI-compatible host: SCRIPT_PROVIDER=custom + CUSTOM_LLM_BASE_URL + CUSTOM_LLM_API_KEY (+ CUSTOM_LLM_MODEL).",
+      503,
+      "zai",
+    );
+  }
   const completion = await zai.chat.completions.create({
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
     thinking: { type: "disabled" },
@@ -227,35 +209,21 @@ async function chatCompletionViaZai(messages: LlmMessage[], temperature?: number
 /* Resolution chain                                                    */
 /* ------------------------------------------------------------------ */
 
-function providerOrder(selected: LlmProvider): Array<"openrouter" | "custom" | "zai"> {
-  if (selected === "openrouter") return ["openrouter"];
+function providerOrder(selected: LlmProvider): Array<"custom" | "zai"> {
   if (selected === "custom") return ["custom"];
   if (selected === "zai") return ["zai"];
-  // auto: openrouter (if key) -> custom (if base url) -> zai (sandbox)
-  const order: Array<"openrouter" | "custom" | "zai"> = [];
-  if (openrouterKey()) order.push("openrouter");
+  // auto: custom (if base url) -> zai (sandbox)
+  const order: Array<"custom" | "zai"> = [];
   if (env("CUSTOM_LLM_BASE_URL")) order.push("custom");
   order.push("zai");
   return order;
 }
 
 async function tryProvider(
-  provider: "openrouter" | "custom" | "zai",
+  provider: "custom" | "zai",
   messages: LlmMessage[],
   temperature?: number,
 ): Promise<LlmResult> {
-  if (provider === "openrouter") {
-    const key = openrouterKey();
-    if (!key) throw new LlmError("OPENROUTER_API_KEY is not configured.", 503, "openrouter");
-    return chatCompletionViaOpenAICompat({
-      provider: "openrouter",
-      baseUrl: (env("OPENROUTER_BASE_URL") || "https://openrouter.ai/api/v1").replace(/\/+$/, ""),
-      apiKey: key,
-      model: openrouterModel(),
-      messages,
-      temperature,
-    });
-  }
   if (provider === "custom") {
     const key = env("CUSTOM_LLM_API_KEY") || "";
     return chatCompletionViaOpenAICompat({
