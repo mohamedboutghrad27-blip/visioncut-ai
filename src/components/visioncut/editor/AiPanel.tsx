@@ -282,6 +282,9 @@ function TextToVideoTool() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not start video generation");
+      if (Array.isArray(data.warnings) && data.warnings.length) {
+        toast.warning(data.warnings.join("  ·  "), { duration: 12000 });
+      }
       const taskId = data.taskId as string;
 
       // Poll until done (max ~7 min)

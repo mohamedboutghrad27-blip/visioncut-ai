@@ -7,8 +7,10 @@
  * (fal.ai, WaveSpeed AI, KIE.AI, PixVerse).
  *
  * Env vars:
- *   VIDEO_PROVIDER         auto (default) | zai | fal | wavespeed | kie | pixverse
- *   VIDEO_API_KEY          API key for the external video provider
+ *   VIDEO_PROVIDER         auto (default) | zai | fal | wavespeed | kie | pixverse | higgsfield
+ *   VIDEO_API_KEY          API key for the external video provider. For higgsfield this is
+ *                          the full "keyId:keySecret" pair from console.higgsfield.ai
+ *   HIGGSFIELD_VIDEO_MODEL default "alibaba/wan-3.0/text-to-video" (model slug from /models)
  *   FAL_VIDEO_MODEL        default "fal-ai/wan-t2v"  (fal.ai queue model id)
  *   WAVESPEED_VIDEO_MODEL  default "wavespeed-ai/wan-2.1-t2v-480p"
  *   KIE_VIDEO_MODEL        default "veo3-fast"
@@ -16,8 +18,9 @@
  *
  * `auto` resolution order:
  *   1. external providers whose credentials are present (VIDEO_API_KEY),
- *      tried in order fal -> wavespeed -> kie -> pixverse;
- *      auth/billing failures fall through to the next candidate
+ *      tried in order higgsfield -> fal -> wavespeed -> kie -> pixverse;
+ *      auth/billing failures fall through to the next candidate (warnings
+ *      are collected on the result so the UI can surface them)
  *   2. `zai` when a Z.ai platform config is available (sandbox)
  *   3. otherwise a clear error listing what was rejected and what to set
  *
@@ -29,7 +32,7 @@
 
 import ZAI from "z-ai-web-dev-sdk";
 
-export type VideoProviderName = "zai" | "fal" | "wavespeed" | "kie" | "pixverse";
+export type VideoProviderName = "zai" | "fal" | "wavespeed" | "kie" | "pixverse" | "higgsfield";
 export type VideoProviderSetting = "auto" | VideoProviderName;
 
 export interface VideoSubmitOptions {
@@ -44,6 +47,8 @@ export interface VideoSubmitResult {
   taskId: string; // "<provider>:<id>"
   provider: VideoProviderName;
   model: string;
+  /** Non-fatal provider rejections that were skipped in `auto` mode. */
+  warnings?: string[];
 }
 
 export type VideoPollStatus = "PENDING" | "PROCESSING" | "SUCCESS" | "FAILED";
@@ -87,6 +92,8 @@ function providerModel(provider: VideoProviderName): string {
       return env("KIE_VIDEO_MODEL") || "veo3-fast";
     case "pixverse":
       return env("PIXVERSE_VIDEO_MODEL") || "v4.5";
+    case "higgsfield":
+      return env("HIGGSFIELD_VIDEO_MODEL") || "alibaba/wan-3.0/text-to-video";
     case "zai":
       return "zai-platform-video";
   }
@@ -429,13 +436,91 @@ async function pollPixverse(id: string, key: string): Promise<VideoPollResult> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Higgsfield (queue API — https://docs.higgsfield.ai)                  */
+/* VIDEO_API_KEY = "keyId:keySecret", sent as `Authorization: Key ...`   */
+/* ------------------------------------------------------------------ */
+
+async function submitHiggsfield(
+  opts: VideoSubmitOptions,
+  key: string,
+  model: string,
+): Promise<VideoSubmitResult> {
+  let body: unknown;
+  try {
+    ({ body } = await httpJson("higgsfield", `https://api.higgsfield.ai/${model}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Key ${key}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({
+        prompt: opts.prompt,
+        duration: opts.duration,
+        resolution: opts.quality === "quality" ? "1080p" : "720p",
+        aspect_ratio: "16:9",
+        generate_audio: opts.withAudio,
+      }),
+    }));
+  } catch (err) {
+    if (err instanceof VideoError && /not_enough_credits/i.test(err.message)) {
+      throw new VideoError(
+        "Higgsfield account is out of credits — top up at console.higgsfield.ai, then try again.",
+        402,
+        "higgsfield",
+      );
+    }
+    throw err;
+  }
+  const requestId = (body as { request_id?: string } | null)?.request_id;
+  if (typeof requestId !== "string" || !requestId) {
+    throw new VideoError("Higgsfield did not return a request id.", 502, "higgsfield");
+  }
+  return { taskId: `higgsfield:${requestId}`, provider: "higgsfield", model };
+}
+
+interface HiggsfieldStatusBody {
+  status?: "queued" | "in_progress" | "nsfw" | "failed" | "completed" | "canceled";
+  error?: string | null;
+  video?: { url?: string } | null;
+  images?: Array<{ url?: string }> | null;
+  audios?: Array<{ url?: string }> | null;
+}
+
+async function pollHiggsfield(id: string, key: string): Promise<VideoPollResult> {
+  const { body } = await httpJson(
+    "higgsfield",
+    `https://api.higgsfield.ai/requests/${encodeURIComponent(id)}/status`,
+    { headers: { Authorization: `Key ${key}` } },
+  );
+  const b = (body as HiggsfieldStatusBody | null) || {};
+  switch (b.status) {
+    case "completed": {
+      const url = b.video?.url || b.images?.[0]?.url || b.audios?.[0]?.url || null;
+      if (!url) return { status: "FAILED", error: "Higgsfield finished but returned no video URL." };
+      return { status: "SUCCESS", videoUrl: url };
+    }
+    case "failed":
+      return { status: "FAILED", error: b.error || "Higgsfield task failed." };
+    case "nsfw":
+      return { status: "FAILED", error: "Higgsfield rejected the prompt (content moderation)." };
+    case "canceled":
+      return { status: "FAILED", error: "Higgsfield task was canceled." };
+    case "queued":
+      return { status: "PENDING" };
+    default:
+      return { status: "PROCESSING" };
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Resolution chain                                                    */
 /* ------------------------------------------------------------------ */
 
 function providerOrder(selected: VideoProviderSetting): VideoProviderName[] {
   if (selected !== "auto") return [selected];
   const order: VideoProviderName[] = [];
-  if (videoKey()) order.push("fal", "wavespeed", "kie", "pixverse");
+  if (videoKey()) order.push("higgsfield", "fal", "wavespeed", "kie", "pixverse");
   order.push("zai");
   return order;
 }
@@ -459,6 +544,9 @@ async function submitProvider(
     case "pixverse":
       if (!key) throw new VideoError("VIDEO_API_KEY is not configured for pixverse.", 503, "pixverse");
       return submitPixverse(opts, key, model);
+    case "higgsfield":
+      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for higgsfield.", 503, "higgsfield");
+      return submitHiggsfield(opts, key, model);
     case "zai":
       return submitZai(opts);
   }
@@ -476,15 +564,20 @@ export async function submitVideoGeneration(
   const order = providerOrder(selected);
   const pinned = selected !== "auto";
   const failures: string[] = [];
+  const warnings: string[] = [];
 
   for (const provider of order) {
     try {
-      return await submitProvider(provider, opts);
+      const result = await submitProvider(provider, opts);
+      if (warnings.length) result.warnings = warnings;
+      return result;
     } catch (err) {
       const ve = err instanceof VideoError ? err : new VideoError(String(err), 502, provider);
       // Sandbox-only provider (zai) outside the sandbox or any pinned failure stops the chain.
       if (pinned) throw ve;
+      const short = ve.message.replace(/\s+/g, " ").slice(0, 180);
       failures.push(`${provider}: ${ve.message}`);
+      warnings.push(`${provider}: ${short}`);
       console.warn(`[video] provider ${provider} failed (status ${ve.status}), trying next...`);
     }
   }
@@ -524,6 +617,9 @@ export async function pollVideoGeneration(taskId: string): Promise<VideoPollResu
     case "pixverse":
       if (!key) throw new VideoError("VIDEO_API_KEY is not configured for pixverse.", 503, "pixverse");
       return pollPixverse(id, key);
+    case "higgsfield":
+      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for higgsfield.", 503, "higgsfield");
+      return pollHiggsfield(id, key);
     default:
       throw new VideoError(`Unknown video provider "${provider}" in task id.`, 400, "video");
   }
@@ -535,6 +631,7 @@ export function videoDiagnostics() {
     provider: env("VIDEO_PROVIDER") || "auto",
     hasKey: !!videoKey(),
     models: {
+      higgsfield: providerModel("higgsfield"),
       fal: providerModel("fal"),
       wavespeed: providerModel("wavespeed"),
       kie: providerModel("kie"),

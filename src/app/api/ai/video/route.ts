@@ -29,7 +29,12 @@ export async function POST(req: NextRequest) {
       fps: parsed.data.fps ?? 30,
       quality: parsed.data.quality ?? "speed",
     });
-    return NextResponse.json({ taskId: result.taskId, provider: result.provider, model: result.model });
+    return NextResponse.json({
+      taskId: result.taskId,
+      provider: result.provider,
+      model: result.model,
+      warnings: result.warnings ?? [],
+    });
   } catch (err) {
     if (err instanceof VideoError) {
       console.error("[ai/video]", err.provider, err.status, err.message);
