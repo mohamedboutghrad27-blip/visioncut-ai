@@ -1,15 +1,16 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useEditor, makeTextClip } from "@/lib/editor/store";
 import { type Asset, uid } from "@/lib/editor/types";
 import { ingestFile, IngestError, validateFile } from "@/lib/editor/media";
 import { getAssetUrl } from "@/lib/editor/idb";
 import { toast } from "sonner";
 import { AiPanel } from "@/components/visioncut/editor/AiPanel";
+import type { StickerHit } from "@/lib/stickers";
 import {
   AudioLines, Film, Image as ImageIcon, Loader2, Music, Palette, Plus,
-  Shapes, Sparkles, Trash2, Type as TypeIcon, Upload, Wand2, Layers,
+  Shapes, Search, Sparkles, Trash2, Type as TypeIcon, Upload, Wand2, Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -144,6 +145,67 @@ export function LeftSidebar() {
   const addClip = useEditor((s) => s.addClip);
   const project = useEditor((s) => s.project);
   const [busyTemplate, setBusyTemplate] = useState(false);
+
+  /* --- sticker search (free OpenMoji index, optional Tenor GIFs) --- */
+  const [stickerQuery, setStickerQuery] = useState("");
+  const [stickerGroup, setStickerGroup] = useState<string | null>(null);
+  const [stickerHits, setStickerHits] = useState<StickerHit[]>([]);
+  const [stickerGroups, setStickerGroups] = useState<Array<{ id: string; label: string }>>([]);
+  const [stickerLoading, setStickerLoading] = useState(false);
+  const [stickerBusy, setStickerBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(async () => {
+      setStickerLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (stickerQuery.trim()) params.set("q", stickerQuery.trim());
+        if (stickerGroup) params.set("group", stickerGroup);
+        const res = await fetch(`/api/stickers/search?${params.toString()}`);
+        const data = await res.json();
+        if (!alive) return;
+        if (res.ok) {
+          setStickerHits(Array.isArray(data.stickers) ? data.stickers : []);
+          if (Array.isArray(data.groups) && data.groups.length) setStickerGroups(data.groups);
+        } else {
+          toast.error(data.error || "Sticker search failed");
+        }
+      } catch {
+        if (alive) toast.error("Sticker search failed");
+      } finally {
+        if (alive) setStickerLoading(false);
+      }
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [stickerQuery, stickerGroup]);
+
+  const addImageSticker = async (hit: StickerHit) => {
+    setStickerBusy(hit.id);
+    try {
+      const res = await fetch(hit.url);
+      if (!res.ok) throw new Error(`Could not fetch sticker (HTTP ${res.status})`);
+      const blob = await res.blob();
+      const { ingestBlob } = await import("@/lib/editor/media");
+      const { asset } = await ingestBlob(blob, {
+        name: hit.annotation || hit.id,
+        kind: "image",
+        mimeType: blob.type || "image/png",
+        origin: "sample",
+        thumbnail: hit.thumbUrl,
+      });
+      addAsset(asset);
+      await addAssetAtPlayhead(asset);
+      toast.success(`“${hit.annotation || hit.id}” sticker added at the playhead`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add sticker");
+    } finally {
+      setStickerBusy(null);
+    }
+  };
 
   const handleFiles = async (files: FileList | File[]) => {
     const list = Array.from(files);
@@ -501,15 +563,88 @@ export function LeftSidebar() {
         {/* STICKERS */}
         {tab === "stickers" && (
           <div className="p-3">
-            <p className="mb-2.5 text-[10px] leading-relaxed text-zinc-500">
-              Click to drop a sticker at the playhead — position and rotate it from the properties panel.
+            <div className="relative mb-2">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+              <input
+                value={stickerQuery}
+                onChange={(e) => setStickerQuery(e.target.value)}
+                placeholder="Search stickers — try قطة, heart, rocket…"
+                className="w-full rounded-lg border border-white/10 bg-black/40 py-1.5 pl-8 pr-2 text-xs text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-400/50"
+              />
+            </div>
+            <div className="mb-2 flex flex-wrap gap-1">
+              <button
+                onClick={() => setStickerGroup(null)}
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[10px] transition-all",
+                  stickerGroup === null
+                    ? "border-violet-400/60 bg-violet-500/20 text-violet-200"
+                    : "border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20"
+                )}
+              >
+                All
+              </button>
+              {stickerGroups
+                .filter((g) => g.id !== "flags" && g.id !== "people-body")
+                .map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => setStickerGroup(stickerGroup === g.id ? null : g.id)}
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px] transition-all",
+                      stickerGroup === g.id
+                        ? "border-violet-400/60 bg-violet-500/20 text-violet-200"
+                        : "border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20"
+                    )}
+                  >
+                    {g.label}
+                  </button>
+                ))}
+            </div>
+            <p className="mb-2 text-[10px] leading-relaxed text-zinc-500">
+              {stickerLoading
+                ? "Searching…"
+                : `${stickerHits.length} free stickers (OpenMoji · CC BY-SA 4.0)`}
+              {" "}— click to drop at the playhead, position it from the properties panel.
             </p>
-            <div className="grid grid-cols-4 gap-2">
+            {stickerLoading ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-5 w-5 animate-spin text-violet-300" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-2">
+                {stickerHits.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => addImageSticker(s)}
+                    disabled={stickerBusy === s.id}
+                    className="relative flex aspect-square items-center justify-center rounded-xl border border-white/8 bg-white/[0.02] p-1.5 transition-all hover:scale-105 hover:border-violet-400/40 hover:bg-white/[0.06] disabled:opacity-60"
+                    title={s.annotation}
+                    aria-label={`Add ${s.annotation} sticker`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={s.thumbUrl}
+                      alt={s.annotation}
+                      loading="lazy"
+                      className="max-h-full max-w-full object-contain"
+                    />
+                    {stickerBusy === s.id && (
+                      <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/50">
+                        <Loader2 className="h-4 w-4 animate-spin text-violet-300" />
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="mb-2 mt-3 text-[10px] text-zinc-500">Quick emoji text stickers:</p>
+            <div className="grid grid-cols-8 gap-1.5">
               {STICKERS.map((s) => (
                 <button
                   key={s}
                   onClick={() => addSticker(s)}
-                  className="flex aspect-square items-center justify-center rounded-xl border border-white/8 bg-white/[0.02] text-2xl transition-all hover:scale-110 hover:border-violet-400/40 hover:bg-white/[0.06]"
+                  className="flex aspect-square items-center justify-center rounded-lg border border-white/8 bg-white/[0.02] text-lg transition-all hover:scale-110 hover:border-violet-400/40 hover:bg-white/[0.06]"
                   aria-label={`Add sticker ${s}`}
                 >
                   {s}
