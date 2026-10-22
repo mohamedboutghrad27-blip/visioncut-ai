@@ -16,13 +16,16 @@
  *   PIXVERSE_API_KEY
  *   HIGGSFIELD_VIDEO_MODEL default "alibaba/wan-3.0/text-to-video" (model slug from /models)
  *   FAL_VIDEO_MODEL        default "fal-ai/wan-t2v"  (fal.ai queue model id)
- *   WAVESPEED_VIDEO_MODEL  default "wavespeed-ai/wan-2.1-t2v-480p"
+ *   WAVESPEED_VIDEO_MODEL  default "wavespeed-ai/wan-2.2/t2v-480p-ultra-fast"
+ *                          ($0.01/video — catalog: GET /api/v3/models; quality
+ *                          mode auto-upgrades to the 720p tier at $0.02)
  *   KIE_VIDEO_MODEL        default "veo3-fast"
  *   PIXVERSE_VIDEO_MODEL   default "v4.5"
  *
  * `auto` resolution order:
  *   1. external providers whose credentials are present (VIDEO_API_KEY),
- *      tried in order higgsfield -> fal -> wavespeed -> kie -> pixverse;
+ *      tried in order wavespeed -> higgsfield -> fal -> kie -> pixverse
+ *      (wavespeed leads: cheapest live key, 1000+ models, $0.01/video);
  *      auth/billing failures fall through to the next candidate (warnings
  *      are collected on the result so the UI can surface them)
  *   2. `zai` when a Z.ai platform config is available (sandbox)
@@ -114,7 +117,7 @@ function providerModel(provider: VideoProviderName): string {
     case "fal":
       return env("FAL_VIDEO_MODEL") || "fal-ai/wan-t2v";
     case "wavespeed":
-      return env("WAVESPEED_VIDEO_MODEL") || "wavespeed-ai/wan-2.1-t2v-480p";
+      return env("WAVESPEED_VIDEO_MODEL") || "wavespeed-ai/wan-2.2/t2v-480p-ultra-fast";
     case "kie":
       return env("KIE_VIDEO_MODEL") || "veo3-fast";
     case "pixverse":
@@ -308,14 +311,42 @@ async function submitWavespeed(
   key: string,
   model: string,
 ): Promise<VideoSubmitResult> {
-  const { body } = await httpJson("wavespeed", `https://api.wavespeed.ai/api/v3/${model}`, {
+  // Default model is the ultra-fast 480p tier ($0.01/video). Quality mode
+  // upgrades to the 720p tier ($0.02) unless a model was pinned via env.
+  let chosen = model;
+  if (!env("WAVESPEED_VIDEO_MODEL") && opts.quality === "quality") {
+    chosen = chosen.includes("720p") ? chosen : chosen.replace("480p", "720p");
+  }
+  // Request schemas differ per model family (all enforce additionalProperties
+  // : false, so sending unknown fields is a hard 400) — classify by slug.
+  const m = chosen.toLowerCase();
+  const body: Record<string, unknown> = { prompt: opts.prompt };
+  if (m.includes("wan-3.0")) {
+    body.aspect_ratio = "16:9";
+    body.resolution = opts.quality === "quality" ? "1080p" : "720p";
+    body.duration = Math.min(30, Math.max(2, opts.duration));
+    body.generate_audio = opts.withAudio;
+    body.enable_prompt_expansion = true;
+  } else if (m.includes("seedance")) {
+    body.aspect_ratio = "16:9";
+    body.duration = Math.min(12, Math.max(2, opts.duration));
+  } else if (m.includes("wan-2.5")) {
+    body.size = opts.quality === "quality" ? "1920*1080" : "1280*720";
+    body.duration = opts.duration <= 5 ? 5 : 10;
+    body.enable_prompt_expansion = true;
+  } else if (m.includes("wan-2.")) {
+    body.size = m.includes("720p") ? "1280*720" : "832*480";
+    body.duration = opts.duration <= 5 ? 5 : 8;
+  }
+  // Any other family: prompt alone is always valid — model defaults apply.
+  const { body: resp } = await httpJson("wavespeed", `https://api.wavespeed.ai/api/v3/${chosen}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: opts.prompt, aspect_ratio: "16:9" }),
+    body: JSON.stringify(body),
   });
-  const data = (body as { data?: { id?: string } } | null)?.data;
+  const data = (resp as { data?: { id?: string } } | null)?.data;
   if (!data?.id) throw new VideoError("WaveSpeed did not return a task id.", 502, "wavespeed");
-  return { taskId: `wavespeed:${data.id}`, provider: "wavespeed", model };
+  return { taskId: `wavespeed:${data.id}`, provider: "wavespeed", model: chosen };
 }
 
 interface WaveSpeedResultBody {
@@ -547,7 +578,7 @@ async function pollHiggsfield(id: string, key: string): Promise<VideoPollResult>
 function providerOrder(selected: VideoProviderSetting): VideoProviderName[] {
   if (selected !== "auto") return [selected];
   const order: VideoProviderName[] = [];
-  for (const p of ["higgsfield", "fal", "wavespeed", "kie", "pixverse"] as VideoProviderName[]) {
+  for (const p of ["wavespeed", "higgsfield", "fal", "kie", "pixverse"] as VideoProviderName[]) {
     if (providerKey(p)) order.push(p);
   }
   order.push("zai");
