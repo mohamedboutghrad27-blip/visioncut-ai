@@ -1,0 +1,679 @@
+     1→     1→/**
+     2→     2→ * Provider-agnostic text-to-video core for VisionCut AI.
+     3→     3→ *
+     4→     4→ * Mirrors src/lib/transcribe.ts and src/lib/llm.ts: the video-generation
+     5→     5→ * backend is selected via env vars so the same build works in the Z.ai
+     6→     6→ * sandbox (platform SDK) and on any hosting with a bring-your-own key
+     7→     7→ * (fal.ai, WaveSpeed AI, KIE.AI, PixVerse).
+     8→     8→ *
+     9→     9→ * Env vars:
+    10→    10→ *   VIDEO_PROVIDER         auto (default) | zai | fal | wavespeed | kie | pixverse | higgsfield
+    11→    11→ *   VIDEO_API_KEY          Shared fallback key for whichever external provider is selected.
+    12→    12→ *   HIGGSFIELD_API_KEY     Per-provider keys — each wins over VIDEO_API_KEY for its own
+    13→    13→ *   FAL_API_KEY            platform, so several platforms can coexist and `auto` tries
+    14→    14→ *   WAVESPEED_API_KEY      every provider that has a usable key. For higgsfield the key is
+    15→    15→ *   KIE_API_KEY            the full "keyId:keySecret" pair from console.higgsfield.ai
+    16→    16→ *   PIXVERSE_API_KEY
+    17→    17→ *   HIGGSFIELD_VIDEO_MODEL default "alibaba/wan-3.0/text-to-video" (model slug from /models)
+    18→    18→ *   FAL_VIDEO_MODEL        default "fal-ai/wan-t2v"  (fal.ai queue model id)
+    19→    19→ *   WAVESPEED_VIDEO_MODEL  default "wavespeed-ai/wan-2.1-t2v-480p"
+    20→    20→ *   KIE_VIDEO_MODEL        default "veo3-fast"
+    21→    21→ *   PIXVERSE_VIDEO_MODEL   default "v4.5"
+    22→    22→ *
+    23→    23→ * `auto` resolution order:
+    24→    24→ *   1. external providers whose credentials are present (VIDEO_API_KEY),
+    25→    25→ *      tried in order higgsfield -> fal -> wavespeed -> kie -> pixverse;
+    26→    26→ *      auth/billing failures fall through to the next candidate (warnings
+    27→    27→ *      are collected on the result so the UI can surface them)
+    28→    28→ *   2. `zai` when a Z.ai platform config is available (sandbox)
+    29→    29→ *   3. otherwise a clear error listing what was rejected and what to set
+    30→    30→ *
+    31→    31→ * When a provider is pinned it is used exclusively and its errors surface
+    32→    32→ * as-is. Task ids are opaque to the client and are namespaced with the
+    33→    33→ * provider ("<provider>:<id>") so /api/ai/video-status can poll the right
+    34→    34→ * backend.
+    35→    35→ */
+    36→    36→
+    37→    37→import ZAI from "z-ai-web-dev-sdk";
+    38→    38→
+    39→    39→export type VideoProviderName = "zai" | "fal" | "wavespeed" | "kie" | "pixverse" | "higgsfield";
+    40→    40→export type VideoProviderSetting = "auto" | VideoProviderName;
+    41→    41→
+    42→    42→export interface VideoSubmitOptions {
+    43→    43→  prompt: string;
+    44→    44→  duration: 5 | 10;
+    45→    45→  withAudio: boolean;
+    46→    46→  fps: 30 | 60;
+    47→    47→  quality: "speed" | "quality";
+    48→    48→}
+    49→    49→
+    50→    50→export interface VideoSubmitResult {
+    51→    51→  taskId: string; // "<provider>:<id>"
+    52→    52→  provider: VideoProviderName;
+    53→    53→  model: string;
+    54→    54→  /** Non-fatal provider rejections that were skipped in `auto` mode. */
+    55→    55→  warnings?: string[];
+    56→    56→}
+    57→    57→
+    58→    58→export type VideoPollStatus = "PENDING" | "PROCESSING" | "SUCCESS" | "FAILED";
+    59→    59→
+    60→    60→export interface VideoPollResult {
+    61→    61→  status: VideoPollStatus;
+    62→    62→  videoUrl?: string;
+    63→    63→  coverUrl?: string;
+    64→    64→  error?: string;
+    65→    65→}
+    66→    66→
+    67→    67→export class VideoError extends Error {
+    68→    68→  status: number;
+    69→    69→  provider: string;
+    70→    70→  constructor(message: string, status = 502, provider = "video") {
+    71→    71→    super(message);
+    72→    72→    this.name = "VideoError";
+    73→    73→    this.status = status;
+    74→    74→    this.provider = provider;
+    75→    75→  }
+    76→    76→}
+    77→    77→
+    78→    78→const HTTP_TIMEOUT_MS = 30_000;
+    79→    79→
+    80→    80→function env(name: string): string | undefined {
+    81→    81→  const v = process.env[name];
+    82→    82→  return v && v.trim() ? v.trim() : undefined;
+    83→    83→}
+    84→    84→
+    85→    85→function videoKey(): string | undefined {
+    86→    86→  return env("VIDEO_API_KEY");
+    87→    87→}
+    88→    88→
+    89→    89→/**
+    90→    90→ * Per-provider key resolution: a dedicated <PROVIDER>_API_KEY wins, then the
+    91→    91→ * shared VIDEO_API_KEY. This lets several platforms coexist — e.g. a Higgsfield
+    92→    92→ * key on VIDEO_API_KEY plus a WaveSpeed key on WAVESPEED_API_KEY — and `auto`
+    93→    93→ * will try every provider that has a usable key.
+    94→    94→ */
+    95→    95→function providerKey(provider: VideoProviderName): string | undefined {
+    96→    96→  switch (provider) {
+    97→    97→    case "higgsfield":
+    98→    98→      return env("HIGGSFIELD_API_KEY") || videoKey();
+    99→    99→    case "fal":
+   100→   100→      return env("FAL_API_KEY") || videoKey();
+   101→   101→    case "wavespeed":
+   102→   102→      return env("WAVESPEED_API_KEY") || videoKey();
+   103→   103→    case "kie":
+   104→   104→      return env("KIE_API_KEY") || videoKey();
+   105→   105→    case "pixverse":
+   106→   106→      return env("PIXVERSE_API_KEY") || videoKey();
+   107→   107→    case "zai":
+   108→   108→      return undefined; // sandbox SDK manages its own credentials
+   109→   109→  }
+   110→   110→}
+   111→   111→
+   112→   112→function providerModel(provider: VideoProviderName): string {
+   113→   113→  switch (provider) {
+   114→   114→    case "fal":
+   115→   115→      return env("FAL_VIDEO_MODEL") || "fal-ai/wan-t2v";
+   116→   116→    case "wavespeed":
+   117→   117→      return env("WAVESPEED_VIDEO_MODEL") || "wavespeed-ai/wan-2.1-t2v-480p";
+   118→   118→    case "kie":
+   119→   119→      return env("KIE_VIDEO_MODEL") || "veo3-fast";
+   120→   120→    case "pixverse":
+   121→   121→      return env("PIXVERSE_VIDEO_MODEL") || "v4.5";
+   122→   122→    case "higgsfield":
+   123→   123→      return env("HIGGSFIELD_VIDEO_MODEL") || "alibaba/wan-3.0/text-to-video";
+   124→   124→    case "zai":
+   125→   125→      return "zai-platform-video";
+   126→   126→  }
+   127→   127→}
+   128→   128→
+   129→   129→/* ------------------------------------------------------------------ */
+   130→   130→/* Shared HTTP helper                                                  */
+   131→   131→/* ------------------------------------------------------------------ */
+   132→   132→
+   133→   133→async function httpJson(
+   134→   134→  provider: string,
+   135→   135→  url: string,
+   136→   136→  init: RequestInit & { timeoutMs?: number } = {},
+   137→   137→): Promise<{ status: number; body: unknown; text: string }> {
+   138→   138→  const controller = new AbortController();
+   139→   139→  const timer = setTimeout(() => controller.abort(), init.timeoutMs ?? HTTP_TIMEOUT_MS);
+   140→   140→  let res: Response;
+   141→   141→  try {
+   142→   142→    res = await fetch(url, { ...init, signal: controller.signal });
+   143→   143→  } catch (err) {
+   144→   144→    const aborted = err instanceof Error && err.name === "AbortError";
+   145→   145→    throw new VideoError(
+   146→   146→      aborted
+   147→   147→        ? `${provider} request timed out.`
+   148→   148→        : `Could not reach ${provider} (${new URL(url).host}). Check network.`,
+   149→   149→      aborted ? 504 : 502,
+   150→   150→      provider,
+   151→   151→    );
+   152→   152→  } finally {
+   153→   153→    clearTimeout(timer);
+   154→   154→  }
+   155→   155→  const text = await res.text();
+   156→   156→  let body: unknown = null;
+   157→   157→  try {
+   158→   158→    body = JSON.parse(text);
+   159→   159→  } catch {
+   160→   160→    /* keep text */
+   161→   161→  }
+   162→   162→  if (!res.ok) {
+   163→   163→    const snippet = text.replace(/\s+/g, " ").slice(0, 220);
+   164→   164→    const map: Record<number, [number, string]> = {
+   165→   165→      401: [502, `The ${provider} API key was rejected (401). Check VIDEO_API_KEY.`],
+   166→   166→      402: [402, `${provider} account has insufficient credits (402).`],
+   167→   167→      403: [502, `The ${provider} key is not allowed for this request (403).`],
+   168→   168→      404: [502, `${provider} model or endpoint not found (404). Check the video model id.`],
+   169→   169→      429: [429, `${provider} rate limit exceeded (429).`],
+   170→   170→    };
+   171→   171→    const mapped = map[res.status];
+   172→   172→    if (mapped) throw new VideoError(`${mapped[1]} ${snippet}`.trim(), mapped[0], provider);
+   173→   173→    throw new VideoError(
+   174→   174→      `${provider} request failed (HTTP ${res.status}). ${snippet}`.trim(),
+   175→   175→      502,
+   176→   176→      provider,
+   177→   177→    );
+   178→   178→  }
+   179→   179→  return { status: res.status, body, text };
+   180→   180→}
+   181→   181→
+   182→   182→/* ------------------------------------------------------------------ */
+   183→   183→/* Z.ai platform SDK (sandbox)                                         */
+   184→   184→/* ------------------------------------------------------------------ */
+   185→   185→
+   186→   186→interface ZaiTaskLike {
+   187→   187→  id?: string;
+   188→   188→  task_status?: string;
+   189→   189→}
+   190→   190→
+   191→   191→async function submitZai(opts: VideoSubmitOptions): Promise<VideoSubmitResult> {
+   192→   192→  let zai: Awaited<ReturnType<typeof ZAI.create>>;
+   193→   193→  try {
+   194→   194→    zai = await ZAI.create();
+   195→   195→  } catch {
+   196→   196→    throw new VideoError(
+   197→   197→      "Video generation has no provider on this server (the built-in engine only works in its own sandbox). " +
+   198→   198→        "Set VIDEO_PROVIDER to your video API platform (fal | wavespeed | kie | pixverse) with a valid VIDEO_API_KEY.",
+   199→   199→      503,
+   200→   200→      "zai",
+   201→   201→    );
+   202→   202→  }
+   203→   203→  const task = (await zai.video.generations.create({
+   204→   204→    prompt: opts.prompt,
+   205→   205→    quality: opts.quality,
+   206→   206→    with_audio: opts.withAudio,
+   207→   207→    fps: opts.fps,
+   208→   208→    duration: opts.duration,
+   209→   209→  })) as ZaiTaskLike;
+   210→   210→  if (!task?.id) {
+   211→   211→    throw new VideoError("The video service did not accept the task. Please try again.", 502, "zai");
+   212→   212→  }
+   213→   213→  return { taskId: `zai:${task.id}`, provider: "zai", model: "zai-platform-video" };
+   214→   214→}
+   215→   215→
+   216→   216→interface ZaiResultLike {
+   217→   217→  task_status?: string;
+   218→   218→  video_result?: Array<{ url?: string; cover_image_url?: string }>;
+   219→   219→  video_url?: string;
+   220→   220→  url?: string;
+   221→   221→  video?: string;
+   222→   222→}
+   223→   223→
+   224→   224→async function pollZai(id: string): Promise<VideoPollResult> {
+   225→   225→  const zai = await ZAI.create();
+   226→   226→  const result = (await zai.async.result.query(id)) as ZaiResultLike;
+   227→   227→  if (result.task_status === "SUCCESS") {
+   228→   228→    const url =
+   229→   229→      result.video_result?.[0]?.url || result.video_url || result.url || result.video || null;
+   230→   230→    if (!url) {
+   231→   231→      return { status: "FAILED", error: "Generation finished but no video was returned." };
+   232→   232→    }
+   233→   233→    return {
+   234→   234→      status: "SUCCESS",
+   235→   235→      videoUrl: url,
+   236→   236→      coverUrl: result.video_result?.[0]?.cover_image_url || undefined,
+   237→   237→    };
+   238→   238→  }
+   239→   239→  if (result.task_status === "FAIL" || result.task_status === "FAILED") {
+   240→   240→    return { status: "FAILED", error: "The video generation task failed." };
+   241→   241→  }
+   242→   242→  return { status: "PROCESSING" };
+   243→   243→}
+   244→   244→
+   245→   245→/* ------------------------------------------------------------------ */
+   246→   246→/* fal.ai (queue API — https://docs.fal.ai)                            */
+   247→   247→/* ------------------------------------------------------------------ */
+   248→   248→
+   249→   249→async function submitFal(opts: VideoSubmitOptions, key: string, model: string): Promise<VideoSubmitResult> {
+   250→   250→  const numFrames = opts.duration === 10 ? 161 : 81;
+   251→   251→  const { body } = await httpJson("fal", `https://queue.fal.run/${model}`, {
+   252→   252→    method: "POST",
+   253→   253→    headers: {
+   254→   254→      Authorization: `Key ${key}`,
+   255→   255→      "Content-Type": "application/json",
+   256→   256→    },
+   257→   257→    body: JSON.stringify({
+   258→   258→      prompt: opts.prompt,
+   259→   259→      aspect_ratio: "16:9",
+   260→   260→      resolution: "480p",
+   261→   261→      num_frames: numFrames,
+   262→   262→      enable_safety_checker: true,
+   263→   263→    }),
+   264→   264→  });
+   265→   265→  const requestId = (body as { request_id?: string } | null)?.request_id;
+   266→   266→  if (typeof requestId !== "string" || !requestId) {
+   267→   267→    throw new VideoError("fal did not return a request id.", 502, "fal");
+   268→   268→  }
+   269→   269→  return { taskId: `fal:${requestId}`, provider: "fal", model };
+   270→   270→}
+   271→   271→
+   272→   272→interface FalStatusBody {
+   273→   273→  status?: string;
+   274→   274→  queue_position?: number;
+   275→   275→  error?: unknown;
+   276→   276→}
+   277→   277→
+   278→   278→async function pollFal(id: string, key: string): Promise<VideoPollResult> {
+   279→   279→  const headers = { Authorization: `Key ${key}` };
+   280→   280→  const { body: statusBody } = await httpJson(
+   281→   281→    "fal",
+   282→   282→    `https://queue.fal.run/requests/${encodeURIComponent(id)}/status?logs=0`,
+   283→   283→    { headers },
+   284→   284→  );
+   285→   285→  const st = (statusBody as FalStatusBody | null)?.status;
+   286→   286→  if (st === "COMPLETED") {
+   287→   287→    const { body } = await httpJson(
+   288→   288→      "fal",
+   289→   289→      `https://queue.fal.run/requests/${encodeURIComponent(id)}`,
+   290→   290→      { headers },
+   291→   291→    );
+   292→   292→    const b = body as { video?: { url?: string }; videos?: Array<{ url?: string }>; url?: string } | null;
+   293→   293→    const url = b?.video?.url || b?.videos?.[0]?.url || b?.url || null;
+   294→   294→    if (!url) return { status: "FAILED", error: "fal finished but no video URL was returned." };
+   295→   295→    return { status: "SUCCESS", videoUrl: url };
+   296→   296→  }
+   297→   297→  if (st === "IN_QUEUE") return { status: "PENDING" };
+   298→   298→  if (st === "IN_PROGRESS") return { status: "PROCESSING" };
+   299→   299→  return { status: "PROCESSING" };
+   300→   300→}
+   301→   301→
+   302→   302→/* ------------------------------------------------------------------ */
+   303→   303→/* WaveSpeed AI (v3 predictions — https://wavespeed.ai/docs)           */
+   304→   304→/* ------------------------------------------------------------------ */
+   305→   305→
+   306→   306→async function submitWavespeed(
+   307→   307→  opts: VideoSubmitOptions,
+   308→   308→  key: string,
+   309→   309→  model: string,
+   310→   310→): Promise<VideoSubmitResult> {
+   311→   311→  const { body } = await httpJson("wavespeed", `https://api.wavespeed.ai/api/v3/${model}`, {
+   312→   312→    method: "POST",
+   313→   313→    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+   314→   314→    body: JSON.stringify({ prompt: opts.prompt, aspect_ratio: "16:9" }),
+   315→   315→  });
+   316→   316→  const data = (body as { data?: { id?: string } } | null)?.data;
+   317→   317→  if (!data?.id) throw new VideoError("WaveSpeed did not return a task id.", 502, "wavespeed");
+   318→   318→  return { taskId: `wavespeed:${data.id}`, provider: "wavespeed", model };
+   319→   319→}
+   320→   320→
+   321→   321→interface WaveSpeedResultBody {
+   322→   322→  data?: { status?: string; outputs?: Array<string | { url?: string }>; error?: string };
+   323→   323→}
+   324→   324→
+   325→   325→async function pollWavespeed(id: string, key: string): Promise<VideoPollResult> {
+   326→   326→  const { body } = await httpJson(
+   327→   327→    "wavespeed",
+   328→   328→    `https://api.wavespeed.ai/api/v3/predictions/${encodeURIComponent(id)}/result`,
+   329→   329→    { headers: { Authorization: `Bearer ${key}` } },
+   330→   330→  );
+   331→   331→  const data = (body as WaveSpeedResultBody | null)?.data;
+   332→   332→  const status = data?.status;
+   333→   333→  if (status === "completed") {
+   334→   334→    const outputs = data?.outputs || [];
+   335→   335→    const first = outputs[0];
+   336→   336→    const url = typeof first === "string" ? first : first?.url;
+   337→   337→    if (!url) return { status: "FAILED", error: "WaveSpeed completed but returned no video." };
+   338→   338→    return { status: "SUCCESS", videoUrl: url };
+   339→   339→  }
+   340→   340→  if (status && ["failed", "cancelled", "timeout", "deleted"].includes(status)) {
+   341→   341→    return { status: "FAILED", error: data?.error || `WaveSpeed task ${status}.` };
+   342→   342→  }
+   343→   343→  if (status === "created") return { status: "PENDING" };
+   344→   344→  return { status: "PROCESSING" };
+   345→   345→}
+   346→   346→
+   347→   347→/* ------------------------------------------------------------------ */
+   348→   348→/* KIE.AI (jobs API — https://docs.kie.ai)                             */
+   349→   349→/* ------------------------------------------------------------------ */
+   350→   350→
+   351→   351→async function submitKie(opts: VideoSubmitOptions, key: string, model: string): Promise<VideoSubmitResult> {
+   352→   352→  const { body } = await httpJson("kie", "https://api.kie.ai/api/v1/jobs/createTask", {
+   353→   353→    method: "POST",
+   354→   354→    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+   355→   355→    body: JSON.stringify({ model, input: { prompt: opts.prompt } }),
+   356→   356→  });
+   357→   357→  const body2 = body as { code?: number; msg?: string; data?: { taskId?: string } } | null;
+   358→   358→  if (body2?.code && body2.code !== 200) {
+   359→   359→    if (body2.code === 401) {
+   360→   360→      throw new VideoError("The kie API key was rejected (401). Check VIDEO_API_KEY.", 502, "kie");
+   361→   361→    }
+   362→   362→    throw new VideoError(`KIE.AI error ${body2.code}: ${body2.msg || "unknown"}`, 502, "kie");
+   363→   363→  }
+   364→   364→  const data = body2?.data;
+   365→   365→  if (!data?.taskId) throw new VideoError("KIE.AI did not return a task id.", 502, "kie");
+   366→   366→  return { taskId: `kie:${data.taskId}`, provider: "kie", model };
+   367→   367→}
+   368→   368→
+   369→   369→interface KieResultBody {
+   370→   370→  data?: { state?: string; resultJson?: string; failMsg?: string };
+   371→   371→}
+   372→   372→
+   373→   373→async function pollKie(id: string, key: string): Promise<VideoPollResult> {
+   374→   374→  const { body } = await httpJson(
+   375→   375→    "kie",
+   376→   376→    `https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(id)}`,
+   377→   377→    { headers: { Authorization: `Bearer ${key}` } },
+   378→   378→  );
+   379→   379→  const data = (body as KieResultBody | null)?.data;
+   380→   380→  const state = data?.state;
+   381→   381→  if (state === "success") {
+   382→   382→    let url: string | null = null;
+   383→   383→    try {
+   384→   384→      const parsed = JSON.parse(data?.resultJson || "{}") as { resultUrls?: string[] };
+   385→   385→      url = parsed.resultUrls?.[0] || null;
+   386→   386→    } catch {
+   387→   387→      /* ignore */
+   388→   388→    }
+   389→   389→    if (!url) return { status: "FAILED", error: "KIE.AI finished but returned no video URL." };
+   390→   390→    return { status: "SUCCESS", videoUrl: url };
+   391→   391→  }
+   392→   392→  if (state === "fail") return { status: "FAILED", error: data?.failMsg || "KIE.AI task failed." };
+   393→   393→  if (state === "waiting" || state === "queuing") return { status: "PENDING" };
+   394→   394→  return { status: "PROCESSING" };
+   395→   395→}
+   396→   396→
+   397→   397→/* ------------------------------------------------------------------ */
+   398→   398→/* PixVerse (openapi v2 — https://docs.platform.pixverse.ai)           */
+   399→   399→/* ------------------------------------------------------------------ */
+   400→   400→
+   401→   401→async function submitPixverse(
+   402→   402→  opts: VideoSubmitOptions,
+   403→   403→  key: string,
+   404→   404→  model: string,
+   405→   405→): Promise<VideoSubmitResult> {
+   406→   406→  const { body } = await httpJson(
+   407→   407→    "pixverse",
+   408→   408→    "https://app-api.pixverse.ai/openapi/v2/video/text/generate",
+   409→   409→    {
+   410→   410→      method: "POST",
+   411→   411→      headers: {
+   412→   412→        "API-KEY": key,
+   413→   413→        "Ai-Trace-Id": `visioncut-${Date.now()}`,
+   414→   414→        "Content-Type": "application/json",
+   415→   415→      },
+   416→   416→      body: JSON.stringify({
+   417→   417→        prompt: opts.prompt,
+   418→   418→        aspect_ratio: "16:9",
+   419→   419→        duration: String(opts.duration),
+   420→   420→        quality: "540p",
+   421→   421→        ai_model: model,
+   422→   422→      }),
+   423→   423→    },
+   424→   424→  );
+   425→   425→  const root = body as { ErrCode?: number; ErrMsg?: string; Resp?: { video_id?: number | string } } | null;
+   426→   426→  if (root?.ErrCode && root.ErrCode !== 0) {
+   427→   427→    if (root.ErrCode === 10005) {
+   428→   428→      throw new VideoError("The pixverse API key is not registered (rejected). Check VIDEO_API_KEY.", 502, "pixverse");
+   429→   429→    }
+   430→   430→    throw new VideoError(`PixVerse error ${root.ErrCode}: ${root.ErrMsg || "unknown"}`, 502, "pixverse");
+   431→   431→  }
+   432→   432→  const resp = root?.Resp;
+   433→   433→  if (!resp?.video_id) throw new VideoError("PixVerse did not return a video id.", 502, "pixverse");
+   434→   434→  return { taskId: `pixverse:${resp.video_id}`, provider: "pixverse", model };
+   435→   435→}
+   436→   436→
+   437→   437→interface PixverseResultBody {
+   438→   438→  ErrCode?: number;
+   439→   439→  ErrMsg?: string;
+   440→   440→  Resp?: { status?: number; url?: string; cover_url?: string; msg?: string };
+   441→   441→}
+   442→   442→
+   443→   443→async function pollPixverse(id: string, key: string): Promise<VideoPollResult> {
+   444→   444→  const { body } = await httpJson(
+   445→   445→    "pixverse",
+   446→   446→    `https://app-api.pixverse.ai/openapi/v2/video/result/${encodeURIComponent(id)}`,
+   447→   447→    { headers: { "API-KEY": key, "Ai-Trace-Id": `visioncut-${Date.now()}` } },
+   448→   448→  );
+   449→   449→  const root = body as PixverseResultBody | null;
+   450→   450→  if (root?.ErrCode && root.ErrCode !== 0) {
+   451→   451→    return { status: "FAILED", error: root.ErrMsg || `PixVerse error ${root.ErrCode}.` };
+   452→   452→  }
+   453→   453→  const resp = root?.Resp;
+   454→   454→  // PixVerse status codes: 1 = generating, 5 = success, 7 = content-moderation failure
+   455→   455→  if (resp?.status === 5) {
+   456→   456→    if (!resp.url) return { status: "FAILED", error: "PixVerse finished but returned no video URL." };
+   457→   457→    return { status: "SUCCESS", videoUrl: resp.url, coverUrl: resp.cover_url || undefined };
+   458→   458→  }
+   459→   459→  if (resp?.status === 7) {
+   460→   460→    return { status: "FAILED", error: resp.msg || "PixVerse rejected the prompt (moderation)." };
+   461→   461→  }
+   462→   462→  return { status: "PROCESSING" };
+   463→   463→}
+   464→   464→
+   465→   465→/* ------------------------------------------------------------------ */
+   466→   466→/* Higgsfield (queue API — https://docs.higgsfield.ai)                  */
+   467→   467→/* VIDEO_API_KEY = "keyId:keySecret", sent as `Authorization: Key ...`   */
+   468→   468→/* ------------------------------------------------------------------ */
+   469→   469→
+   470→   470→async function submitHiggsfield(
+   471→   471→  opts: VideoSubmitOptions,
+   472→   472→  key: string,
+   473→   473→  model: string,
+   474→   474→): Promise<VideoSubmitResult> {
+   475→   475→  let body: unknown;
+   476→   476→  try {
+   477→   477→    ({ body } = await httpJson("higgsfield", `https://api.higgsfield.ai/${model}`, {
+   478→   478→      method: "POST",
+   479→   479→      headers: {
+   480→   480→        Authorization: `Key ${key}`,
+   481→   481→        "Content-Type": "application/json",
+   482→   482→        "Idempotency-Key": crypto.randomUUID(),
+   483→   483→      },
+   484→   484→      body: JSON.stringify({
+   485→   485→        prompt: opts.prompt,
+   486→   486→        duration: opts.duration,
+   487→   487→        resolution: opts.quality === "quality" ? "1080p" : "720p",
+   488→   488→        aspect_ratio: "16:9",
+   489→   489→        generate_audio: opts.withAudio,
+   490→   490→      }),
+   491→   491→    }));
+   492→   492→  } catch (err) {
+   493→   493→    if (err instanceof VideoError && /not_enough_credits/i.test(err.message)) {
+   494→   494→      throw new VideoError(
+   495→   495→        "Higgsfield account is out of credits — top up at console.higgsfield.ai, then try again.",
+   496→   496→        402,
+   497→   497→        "higgsfield",
+   498→   498→      );
+   499→   499→    }
+   500→   500→    throw err;
+   501→   501→  }
+   502→   502→  const requestId = (body as { request_id?: string } | null)?.request_id;
+   503→   503→  if (typeof requestId !== "string" || !requestId) {
+   504→   504→    throw new VideoError("Higgsfield did not return a request id.", 502, "higgsfield");
+   505→   505→  }
+   506→   506→  return { taskId: `higgsfield:${requestId}`, provider: "higgsfield", model };
+   507→   507→}
+   508→   508→
+   509→   509→interface HiggsfieldStatusBody {
+   510→   510→  status?: "queued" | "in_progress" | "nsfw" | "failed" | "completed" | "canceled";
+   511→   511→  error?: string | null;
+   512→   512→  video?: { url?: string } | null;
+   513→   513→  images?: Array<{ url?: string }> | null;
+   514→   514→  audios?: Array<{ url?: string }> | null;
+   515→   515→}
+   516→   516→
+   517→   517→async function pollHiggsfield(id: string, key: string): Promise<VideoPollResult> {
+   518→   518→  const { body } = await httpJson(
+   519→   519→    "higgsfield",
+   520→   520→    `https://api.higgsfield.ai/requests/${encodeURIComponent(id)}/status`,
+   521→   521→    { headers: { Authorization: `Key ${key}` } },
+   522→   522→  );
+   523→   523→  const b = (body as HiggsfieldStatusBody | null) || {};
+   524→   524→  switch (b.status) {
+   525→   525→    case "completed": {
+   526→   526→      const url = b.video?.url || b.images?.[0]?.url || b.audios?.[0]?.url || null;
+   527→   527→      if (!url) return { status: "FAILED", error: "Higgsfield finished but returned no video URL." };
+   528→   528→      return { status: "SUCCESS", videoUrl: url };
+   529→   529→    }
+   530→   530→    case "failed":
+   531→   531→      return { status: "FAILED", error: b.error || "Higgsfield task failed." };
+   532→   532→    case "nsfw":
+   533→   533→      return { status: "FAILED", error: "Higgsfield rejected the prompt (content moderation)." };
+   534→   534→    case "canceled":
+   535→   535→      return { status: "FAILED", error: "Higgsfield task was canceled." };
+   536→   536→    case "queued":
+   537→   537→      return { status: "PENDING" };
+   538→   538→    default:
+   539→   539→      return { status: "PROCESSING" };
+   540→   540→  }
+   541→   541→}
+   542→   542→
+   543→   543→/* ------------------------------------------------------------------ */
+   544→   544→/* Resolution chain                                                    */
+   545→   545→/* ------------------------------------------------------------------ */
+   546→   546→
+   547→   547→function providerOrder(selected: VideoProviderSetting): VideoProviderName[] {
+   548→   548→  if (selected !== "auto") return [selected];
+   549→   549→  const order: VideoProviderName[] = [];
+   550→   550→  for (const p of ["higgsfield", "fal", "wavespeed", "kie", "pixverse"] as VideoProviderName[]) {
+   551→   551→    if (providerKey(p)) order.push(p);
+   552→   552→  }
+   553→   553→  order.push("zai");
+   554→   554→  return order;
+   555→   555→}
+   556→   556→
+   557→   557→async function submitProvider(
+   558→   558→  provider: VideoProviderName,
+   559→   559→  opts: VideoSubmitOptions,
+   560→   560→): Promise<VideoSubmitResult> {
+   561→   561→  const key = providerKey(provider);
+   562→   562→  const model = providerModel(provider);
+   563→   563→  switch (provider) {
+   564→   564→    case "fal":
+   565→   565→      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for fal.", 503, "fal");
+   566→   566→      return submitFal(opts, key, model);
+   567→   567→    case "wavespeed":
+   568→   568→      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for wavespeed.", 503, "wavespeed");
+   569→   569→      return submitWavespeed(opts, key, model);
+   570→   570→    case "kie":
+   571→   571→      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for kie.", 503, "kie");
+   572→   572→      return submitKie(opts, key, model);
+   573→   573→    case "pixverse":
+   574→   574→      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for pixverse.", 503, "pixverse");
+   575→   575→      return submitPixverse(opts, key, model);
+   576→   576→    case "higgsfield":
+   577→   577→      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for higgsfield.", 503, "higgsfield");
+   578→   578→      return submitHiggsfield(opts, key, model);
+   579→   579→    case "zai":
+   580→   580→      return submitZai(opts);
+   581→   581→  }
+   582→   582→}
+   583→   583→
+   584→   584→/**
+   585→   585→ * Submit a text-to-video task using the configured provider chain.
+   586→   586→ * In `auto` mode, auth/billing failures on external providers fall through
+   587→   587→ * to the next candidate; pinned providers surface errors as-is.
+   588→   588→ */
+   589→   589→export async function submitVideoGeneration(
+   590→   590→  opts: VideoSubmitOptions,
+   591→   591→): Promise<VideoSubmitResult> {
+   592→   592→  const selected = (env("VIDEO_PROVIDER") as VideoProviderSetting | undefined) || "auto";
+   593→   593→  const order = providerOrder(selected);
+   594→   594→  const pinned = selected !== "auto";
+   595→   595→  const failures: string[] = [];
+   596→   596→  const warnings: string[] = [];
+   597→   597→
+   598→   598→  for (const provider of order) {
+   599→   599→    try {
+   600→   600→      const result = await submitProvider(provider, opts);
+   601→   601→      if (warnings.length) result.warnings = warnings;
+   602→   602→      return result;
+   603→   603→    } catch (err) {
+   604→   604→      const ve = err instanceof VideoError ? err : new VideoError(String(err), 502, provider);
+   605→   605→      // Sandbox-only provider (zai) outside the sandbox or any pinned failure stops the chain.
+   606→   606→      if (pinned) throw ve;
+   607→   607→      const short = ve.message.replace(/\s+/g, " ").slice(0, 180);
+   608→   608→      failures.push(`${provider}: ${ve.message}`);
+   609→   609→      warnings.push(`${provider}: ${short}`);
+   610→   610→      console.warn(`[video] provider ${provider} failed (status ${ve.status}), trying next...`);
+   611→   611→    }
+   612→   612→  }
+   613→   613→  throw new VideoError(
+   614→   614→    "No video provider accepted the task. " +
+   615→   615→      (failures.length
+   616→   616→        ? `Provider results — ${failures.join(" | ")}`
+   617→   617→        : "Set VIDEO_PROVIDER and VIDEO_API_KEY, or use the Z.ai sandbox."),
+   618→   618→    503,
+   619→   619→    "video",
+   620→   620→  );
+   621→   621→}
+   622→   622→
+   623→   623→/** Poll a previously submitted task ("<provider>:<id>"). */
+   624→   624→export async function pollVideoGeneration(taskId: string): Promise<VideoPollResult> {
+   625→   625→  const sep = taskId.indexOf(":");
+   626→   626→  const provider = (sep === -1 ? "zai" : taskId.slice(0, sep)) as VideoProviderName;
+   627→   627→  const id = sep === -1 ? taskId : taskId.slice(sep + 1);
+   628→   628→  const key = providerKey(provider);
+   629→   629→
+   630→   630→  if (!/^[a-z0-9A-Z_\-\.]+$/.test(id)) {
+   631→   631→    throw new VideoError("Malformed task id.", 400, "video");
+   632→   632→  }
+   633→   633→
+   634→   634→  switch (provider) {
+   635→   635→    case "zai":
+   636→   636→      return pollZai(id);
+   637→   637→    case "fal":
+   638→   638→      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for fal.", 503, "fal");
+   639→   639→      return pollFal(id, key);
+   640→   640→    case "wavespeed":
+   641→   641→      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for wavespeed.", 503, "wavespeed");
+   642→   642→      return pollWavespeed(id, key);
+   643→   643→    case "kie":
+   644→   644→      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for kie.", 503, "kie");
+   645→   645→      return pollKie(id, key);
+   646→   646→    case "pixverse":
+   647→   647→      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for pixverse.", 503, "pixverse");
+   648→   648→      return pollPixverse(id, key);
+   649→   649→    case "higgsfield":
+   650→   650→      if (!key) throw new VideoError("VIDEO_API_KEY is not configured for higgsfield.", 503, "higgsfield");
+   651→   651→      return pollHiggsfield(id, key);
+   652→   652→    default:
+   653→   653→      throw new VideoError(`Unknown video provider "${provider}" in task id.`, 400, "video");
+   654→   654→  }
+   655→   655→}
+   656→   656→
+   657→   657→/** Masked diagnostics for a health endpoint (never leaks the key). */
+   658→   658→export function videoDiagnostics() {
+   659→   659→  return {
+   660→   660→    provider: env("VIDEO_PROVIDER") || "auto",
+   661→   661→    hasKey: !!videoKey(),
+   662→   662→    keys: {
+   663→   663→      higgsfield: !!env("HIGGSFIELD_API_KEY") || !!videoKey(),
+   664→   664→      fal: !!env("FAL_API_KEY") || !!videoKey(),
+   665→   665→      wavespeed: !!env("WAVESPEED_API_KEY") || !!videoKey(),
+   666→   666→      kie: !!env("KIE_API_KEY") || !!videoKey(),
+   667→   667→      pixverse: !!env("PIXVERSE_API_KEY") || !!videoKey(),
+   668→   668→    },
+   669→   669→    models: {
+   670→   670→      higgsfield: providerModel("higgsfield"),
+   671→   671→      fal: providerModel("fal"),
+   672→   672→      wavespeed: providerModel("wavespeed"),
+   673→   673→      kie: providerModel("kie"),
+   674→   674→      pixverse: providerModel("pixverse"),
+   675→   675→    },
+   676→   676→    zai: { available: true },
+   677→   677→  };
+   678→   678→}
+   679→   679→
