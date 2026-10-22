@@ -154,6 +154,9 @@ function StoryboardTool() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Image generation failed");
+      if (Array.isArray(data.warnings) && data.warnings.length) {
+        toast.warning(data.warnings.join("  ·  "), { duration: 12000 });
+      }
       const blob = await (await fetch(data.imageDataUrl)).blob();
       const { asset } = await ingestBlob(blob, {
         name: `Scene ${scene.index} visual`,
