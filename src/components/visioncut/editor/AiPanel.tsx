@@ -575,13 +575,19 @@ function SubtitlesTool() {
 /* ------------------------------------------------------------------ */
 
 const VOICES = [
-  { id: "tongtong", label: "Tongtong (female, warm)" },
+  { id: "female", label: "Female · calm" },
+  { id: "male", label: "Male · deep" },
+  { id: "teenager", label: "Teen · lively" },
+  { id: "child", label: "Child · bright" },
+  { id: "elderly", label: "Elder · wise" },
+  { id: "whisper", label: "Whisper · soft" },
 ];
 
 function VoiceoverTool() {
   const [text, setText] = useState("");
-  const [voice, setVoice] = useState("tongtong");
+  const [voice, setVoice] = useState("female");
   const [speed, setSpeed] = useState(1);
+  const [quality, setQuality] = useState<"fast" | "hd">("fast");
   const [busy, setBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -595,10 +601,13 @@ function VoiceoverTool() {
       const res = await fetch("/api/ai/voiceover", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim(), voice, speed }),
+        body: JSON.stringify({ text: text.trim(), voice, speed, quality }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Voiceover failed");
+      if (Array.isArray(data.warnings) && data.warnings.length) {
+        toast.warning(data.warnings.join("  ·  "), { duration: 12000 });
+      }
       const blob = await (await fetch(data.audioDataUrl)).blob();
 
       if (previewOnly) {
@@ -656,7 +665,7 @@ function VoiceoverTool() {
         placeholder="Type the narration… e.g. 'Three tips that will change how you edit videos forever.'"
         className="scrollbar-slim w-full resize-none rounded-xl border border-white/10 bg-black/40 p-3 text-[11px] leading-relaxed text-zinc-200 placeholder:text-zinc-600 focus:border-fuchsia-400/50 focus:outline-none"
       />
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
+      <div className="mt-2 grid grid-cols-3 gap-1.5">
         <label className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-zinc-400">
           Voice
           <select
@@ -667,6 +676,17 @@ function VoiceoverTool() {
             {VOICES.map((v) => (
               <option key={v.id} value={v.id} className="bg-[#101018]">{v.label}</option>
             ))}
+          </select>
+        </label>
+        <label className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-zinc-400">
+          Quality
+          <select
+            value={quality}
+            onChange={(e) => setQuality(e.target.value as "fast" | "hd")}
+            className="mt-0.5 block w-full bg-transparent text-[11px] font-semibold text-zinc-200 focus:outline-none"
+          >
+            <option value="fast" className="bg-[#101018]">Fast · $0.005</option>
+            <option value="hd" className="bg-[#101018]">HD · $0.04</option>
           </select>
         </label>
         <label className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-zinc-400">

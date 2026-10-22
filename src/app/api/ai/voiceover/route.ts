@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import ZAI from "z-ai-web-dev-sdk";
 import { getSessionUser } from "@/lib/auth";
+import { generateVoiceover, VoiceoverError, voiceoverDiagnostics } from "@/lib/voiceover";
 
 const schema = z.object({
   text: z.string().trim().min(1, "Enter some text to narrate").max(2000),
   voice: z.string().max(40).optional(),
   speed: z.number().min(0.5).max(2).optional(),
+  quality: z.enum(["fast", "hd"]).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -17,25 +18,20 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid input" }, { status: 400 });
     }
-    const zai = await ZAI.create();
-    const response = await zai.audio.tts.create({
-      input: parsed.data.text,
-      voice: parsed.data.voice || "tongtong",
-      speed: parsed.data.speed ?? 1.0,
-      response_format: "wav",
-      stream: false,
-    });
-    const contentType = response.headers.get("content-type") || "audio/wav";
-    const arrayBuffer = await response.arrayBuffer();
-    if (arrayBuffer.byteLength < 512) {
-      return NextResponse.json({ error: "The speech service returned no audio. Try shorter text." }, { status: 502 });
-    }
-    const base64 = Buffer.from(new Uint8Array(arrayBuffer)).toString("base64");
+    const result = await generateVoiceover(parsed.data);
+    const bytes = Math.floor((result.audioDataUrl.split(",")[1]?.length || 0) * 0.75);
     return NextResponse.json({
-      audioDataUrl: `data:${contentType.split(";")[0]};base64,${base64}`,
-      bytes: arrayBuffer.byteLength,
+      audioDataUrl: result.audioDataUrl,
+      bytes,
+      provider: result.provider,
+      model: result.model,
+      warnings: result.warnings ?? [],
     });
   } catch (err) {
+    if (err instanceof VoiceoverError) {
+      console.error("[ai/voiceover]", err.provider, err.message);
+      return NextResponse.json({ error: err.message, provider: err.provider }, { status: err.status });
+    }
     console.error("[ai/voiceover]", err);
     return NextResponse.json({ error: "Voiceover generation failed. Please try again shortly." }, { status: 500 });
   }
