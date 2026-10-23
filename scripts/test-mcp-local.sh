@@ -31,7 +31,7 @@ import json,sys
 d=json.load(sys.stdin)
 tools=d['result']['tools']
 print(len(tools),'tools:', ', '.join(t['name'] for t in tools))
-assert len(tools)==8
+assert len(tools)==11
 "
 
 echo "== 5) tools/call visioncut_status =="

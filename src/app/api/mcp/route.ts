@@ -20,7 +20,7 @@ const SUPPORTED_VERSIONS = new Set(["2024-11-05", "2025-03-26", "2025-06-18"]);
 const LATEST_VERSION = "2025-06-18";
 const SERVER_INFO = { name: "visioncut-ai", version: "1.0.0" };
 const SERVER_INSTRUCTIONS =
-  "VisionCut AI editor tools: check visioncut_status first. Generate storyboards from scripts, images, voiceovers (Arabic supported), and text-to-video (start + poll pattern). Sticker search returns free transparent-PNG URLs.";
+  "VisionCut AI editor tools: check visioncut_status first. Generation: storyboards from scripts, images, voiceovers (Arabic supported), text-to-video (start + poll pattern). Persistence: visioncut_create_project makes a project, visioncut_import_media downloads a URL (e.g. the MP4 from visioncut_check_video) into the user's cloud library, visioncut_add_to_project places it on the timeline — after that the clip is visible in the user's editor dashboard.";
 
 interface JsonRpcRequest {
   jsonrpc?: string;

@@ -19,7 +19,7 @@ print('server:', d['serverInfo'], '| protocol:', d['protocolVersion'])
 curl -s -X POST "$BASE?key=$KEY" -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | P "
 import json,sys; t=json.load(sys.stdin)['result']['tools']
-print(len(t),'tools:', ', '.join(x['name'] for x in t)); assert len(t)==8
+print(len(t),'tools:', ', '.join(x['name'] for x in t)); assert len(t)==11
 "
 
 echo "== 3) visioncut_status =="
