@@ -1,23 +1,21 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
+import { Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 
-const geistSans = Geist({
+/* Resend-style typography: Inter everywhere, Geist Mono for code/labels.
+   --font-geist-sans is kept as the CSS variable name so every existing
+   font-sans/font-display reference continues to resolve. */
+const inter = Inter({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
-});
-
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-display",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
 });
 
 const siteUrl = "https://visioncut.ai";
@@ -49,7 +47,7 @@ export const metadata: Metadata = {
         url:
           "data:image/svg+xml," +
           encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><rect width="64" height="64" rx="14" fill="#0a0a12"/><path d="M18 16h8l6 18 6-18h8L36 48h-8L18 16z" fill="url(#g)"/><rect x="42" y="36" width="6" height="12" rx="3" fill="url(#g)" transform="rotate(45 45 42)"/></svg>`
+            `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#000000"/><path d="M18 16h8l6 18 6-18h8L36 48h-8L18 16z" fill="#ffffff"/><rect x="42" y="36" width="6" height="12" rx="3" fill="#ffffff" transform="rotate(45 45 42)"/></svg>`
           ),
         type: "image/svg+xml",
       },
@@ -78,7 +76,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#050508",
+  themeColor: "#000000",
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
@@ -92,7 +90,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased bg-background text-foreground`}
+        className={`${inter.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         {/* Marks JS availability before paint: reveal animations only hide content when JS runs
             (ui-ux-pro-max no-JS fallback rule). Body-top inline script executes before any

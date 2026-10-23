@@ -156,7 +156,7 @@ export function DashboardPage() {
   if (authLoading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-7 w-7 animate-spin text-violet-400" />
+        <Loader2 className="h-7 w-7 animate-spin text-zinc-400" />
       </div>
     );
   }
@@ -206,9 +206,9 @@ export function DashboardPage() {
             <button
               key={c.title}
               onClick={c.action}
-              className="card-hover group flex items-start gap-4 rounded-2xl border border-white/8 bg-white/[0.025] p-5 text-left"
+              className="card-hover group flex items-start gap-4 rounded-xl border border-white/[0.08] bg-white/[0.015] p-5 text-left"
             >
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/25 to-cyan-500/10 text-violet-300">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-zinc-300">
                 <c.icon className="h-5 w-5" />
               </span>
               <span>
@@ -233,7 +233,7 @@ export function DashboardPage() {
           </div>
         ) : projects.length === 0 ? (
           <div className="mt-6 flex flex-col items-center rounded-3xl border border-dashed border-white/12 bg-white/[0.015] py-16 text-center">
-            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-300">
               <Sparkles className="h-6 w-6" />
             </span>
             <h3 className="font-display mt-5 text-lg font-semibold text-white">No projects yet</h3>
@@ -250,7 +250,7 @@ export function DashboardPage() {
             {projects.map((p) => (
               <div
                 key={p.id}
-                className="card-hover group cursor-pointer overflow-hidden rounded-2xl border border-white/8 bg-[#0b0b12]"
+                className="card-hover group cursor-pointer overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0a0a]"
                 onClick={() => router.navigate(`/editor/${p.id}`)}
                 role="button"
                 tabIndex={0}
@@ -327,7 +327,7 @@ export function DashboardPage() {
           />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRenaming(null)} className="text-zinc-400 hover:text-white">Cancel</Button>
-            <Button onClick={confirmRename} className="bg-gradient-to-r from-violet-600 to-cyan-400 text-white hover:brightness-110">Save</Button>
+            <Button onClick={confirmRename} className="bg-[#ededf2] text-black hover:bg-white">Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

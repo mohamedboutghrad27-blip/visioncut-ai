@@ -73,7 +73,7 @@ export function ShowcaseGrid({ showHeading = true }: { showHeading?: boolean }) 
   };
 
   return (
-    <section id="showcase" className="scroll-mt-20 py-24 lg:py-32">
+    <section id="showcase" className="scroll-mt-20 border-t border-white/[0.08] py-24 lg:py-32">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {showHeading && (
           <SectionHeading
@@ -89,10 +89,10 @@ export function ShowcaseGrid({ showHeading = true }: { showHeading?: boolean }) 
               key={c}
               onClick={() => setActive(c)}
               className={cn(
-                "rounded-full border px-4 py-1.5 text-[13px] font-medium transition-all duration-300",
+                "rounded-full border px-4 py-1.5 text-[13px] font-medium transition-all duration-200",
                 active === c
-                  ? "border-violet-400/50 bg-violet-500/20 text-white shadow-[0_0_16px_-2px_rgba(139,92,246,0.5)]"
-                  : "border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-white"
+                  ? "border-white bg-[#ededf2] text-black"
+                  : "border-white/10 bg-transparent text-zinc-400 hover:border-white/25 hover:text-white"
               )}
             >
               {c}
@@ -100,10 +100,10 @@ export function ShowcaseGrid({ showHeading = true }: { showHeading?: boolean }) 
           ))}
         </Reveal>
 
-        <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((item, i) => (
             <Reveal key={item.id} delay={(i % 4) * 60}>
-              <div className="card-hover group relative overflow-hidden rounded-2xl border border-white/8 bg-[#0b0b12]">
+              <div className="card-hover group relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0a0a]">
                 <div className={cn("relative w-full", item.ratio === "9:16" ? "aspect-[3/4]" : item.ratio === "1:1" ? "aspect-square" : "aspect-video")}>
                   <ThumbGradient seed={item.id + item.title} />
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300 group-hover:opacity-100">
@@ -120,13 +120,13 @@ export function ShowcaseGrid({ showHeading = true }: { showHeading?: boolean }) 
                 </div>
                 <div className="p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <h3 className="truncate text-sm font-semibold text-white">{item.title}</h3>
-                    <span className="shrink-0 rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-zinc-400">{item.category}</span>
+                    <h3 className="truncate text-sm font-medium text-white">{item.title}</h3>
+                    <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-zinc-400">{item.category}</span>
                   </div>
                   <button
                     onClick={() => applyTemplate(item)}
                     disabled={creating === item.id}
-                    className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-violet-400/30 bg-violet-500/10 py-2 text-xs font-semibold text-violet-200 transition-all hover:bg-violet-500/25 hover:text-white disabled:opacity-60"
+                    className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/12 bg-white/[0.03] py-2 text-xs font-medium text-zinc-200 transition-all hover:border-white/25 hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
                   >
                     <UseIcon className="h-3.5 w-3.5" />
                     {creating === item.id ? "Creating…" : "Use Template"}

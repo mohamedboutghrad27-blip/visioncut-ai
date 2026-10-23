@@ -69,32 +69,31 @@ export const FAQ_ITEMS = [
 
 export function TestimonialsSection() {
   return (
-    <section id="testimonials" className="scroll-mt-20 py-24 lg:py-32">
+    <section id="testimonials" className="scroll-mt-20 border-t border-white/[0.08] py-24 lg:py-32">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
           eyebrow="Loved by creators"
           title={<>What creators <span className="text-gradient">are saying</span></>}
           description="Early-access feedback from editors, educators and producers using VisionCut AI."
         />
-        <div className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-3">
+        <div className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-3">
           {TESTIMONIALS.map((t, i) => (
             <Reveal key={t.id} delay={i * 100}>
-              <figure className="card-hover relative flex h-full flex-col rounded-2xl border border-white/8 bg-[#0b0b12]/80 p-6">
+              <figure className="card-hover relative flex h-full flex-col rounded-xl border border-white/[0.08] bg-white/[0.015] p-6">
                 <div className="mb-4 flex gap-1" aria-label="5 out of 5 stars">
                   {Array.from({ length: 5 }).map((_, s) => (
-                    <Star key={s} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                    <Star key={s} className="h-3.5 w-3.5 fill-zinc-200 text-zinc-200" />
                   ))}
                 </div>
                 <blockquote className="flex-1 text-sm leading-relaxed text-zinc-300">“{t.quote}”</blockquote>
                 <figcaption className="mt-5 flex items-center gap-3">
                   <span
-                    className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white"
-                    style={{ background: `linear-gradient(135deg, ${t.color}, #0b0b12)` }}
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/[0.06] text-xs font-semibold text-white"
                   >
                     {t.initials}
                   </span>
                   <div>
-                    <p className="text-sm font-semibold text-white">{t.name}</p>
+                    <p className="text-sm font-medium text-white">{t.name}</p>
                     <p className="text-xs text-zinc-500">{t.role}</p>
                   </div>
                   <SampleBadge className="ml-auto" />
@@ -114,7 +113,7 @@ export function TestimonialsSection() {
 export function FaqSection({ id = "faq" }: { id?: string }) {
   const [openItem, setOpenItem] = useState<string | null>(null);
   return (
-    <section id={id} className="scroll-mt-20 py-24 lg:py-32">
+    <section id={id} className="scroll-mt-20 border-t border-white/[0.08] py-24 lg:py-32">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
           eyebrow="FAQ"
@@ -128,8 +127,8 @@ export function FaqSection({ id = "faq" }: { id?: string }) {
                 key={i}
                 value={`faq-${i}`}
                 className={cn(
-                  "border-white/8 transition-colors",
-                  openItem === `faq-${i}` && "border-violet-400/25"
+                  "border-white/[0.08] transition-colors",
+                  openItem === `faq-${i}` && "border-white/25"
                 )}
               >
                 <AccordionTrigger className="py-5 text-left text-[15px] font-medium text-zinc-200 hover:text-white hover:no-underline">

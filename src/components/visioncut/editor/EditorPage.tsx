@@ -216,8 +216,8 @@ export function EditorPage({ projectId }: { projectId: string }) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-[#050508]">
         <div className="relative">
-          <Loader2 className="h-9 w-9 animate-spin text-violet-400" />
-          <div className="absolute inset-0 -z-10 blur-xl bg-violet-500/40 rounded-full" />
+          <Loader2 className="h-9 w-9 animate-spin text-zinc-400" />
+          <div className="absolute inset-0 -z-10 blur-xl bg-white/20 rounded-full" />
         </div>
         <p className="text-sm text-zinc-500">Loading your editing studio…</p>
       </div>
@@ -231,7 +231,7 @@ export function EditorPage({ projectId }: { projectId: string }) {
         <h1 className="font-display text-xl font-semibold text-white">{fatal}</h1>
         <button
           onClick={() => router.navigate("/dashboard")}
-          className="rounded-xl bg-gradient-to-r from-violet-600 to-cyan-400 px-6 py-2.5 text-sm font-semibold text-white"
+          className="rounded-lg bg-[#ededf2] px-6 py-2.5 text-sm font-medium text-black hover:bg-white"
         >
           Back to dashboard
         </button>

@@ -91,7 +91,7 @@ export function SettingsPage() {
   if (loading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-7 w-7 animate-spin text-violet-400" />
+        <Loader2 className="h-7 w-7 animate-spin text-zinc-400" />
       </div>
     );
   }
@@ -106,7 +106,7 @@ export function SettingsPage() {
         {/* Profile */}
         <section className="mt-8 rounded-2xl border border-white/8 bg-white/[0.025] p-6" aria-labelledby="profile-heading">
           <h2 id="profile-heading" className="flex items-center gap-2.5 text-base font-semibold text-white">
-            <UserRound className="h-4.5 w-4.5 text-violet-300" /> Profile
+            <UserRound className="h-4.5 w-4.5 text-zinc-400" /> Profile
           </h2>
           <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -136,7 +136,7 @@ export function SettingsPage() {
               ))}
             </div>
           </div>
-          <Button onClick={saveProfile} disabled={saving} className="mt-6 bg-gradient-to-r from-violet-600 to-cyan-400 text-white hover:brightness-110">
+          <Button onClick={saveProfile} disabled={saving} className="mt-6 bg-[#ededf2] text-black hover:bg-white">
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save profile
           </Button>
@@ -145,7 +145,7 @@ export function SettingsPage() {
         {/* Editor preferences */}
         <section className="mt-6 rounded-2xl border border-white/8 bg-white/[0.025] p-6" aria-labelledby="editor-heading">
           <h2 id="editor-heading" className="flex items-center gap-2.5 text-base font-semibold text-white">
-            <Video className="h-4.5 w-4.5 text-violet-300" /> Editor preferences
+            <Video className="h-4.5 w-4.5 text-zinc-400" /> Editor preferences
           </h2>
           <p className="mt-1 text-xs text-zinc-600">These preferences are stored on this device.</p>
           <div className="mt-5 space-y-4">
@@ -184,7 +184,7 @@ export function SettingsPage() {
                     className={cn(
                       "rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
                       previewQuality === q
-                        ? "border-violet-400/50 bg-violet-500/20 text-white"
+                        ? "border-white/40 bg-white/10 text-white"
                         : "border-white/10 text-zinc-400 hover:text-white"
                     )}
                   >
@@ -199,7 +199,7 @@ export function SettingsPage() {
         {/* Security */}
         <section className="mt-6 rounded-2xl border border-white/8 bg-white/[0.025] p-6" aria-labelledby="security-heading">
           <h2 id="security-heading" className="flex items-center gap-2.5 text-base font-semibold text-white">
-            <ShieldCheck className="h-4.5 w-4.5 text-violet-300" /> Security
+            <ShieldCheck className="h-4.5 w-4.5 text-zinc-400" /> Security
           </h2>
           <div className="mt-5 space-y-3 text-sm text-zinc-400">
             <p className="flex items-center gap-2">
@@ -208,7 +208,7 @@ export function SettingsPage() {
             </p>
             <p>
               Password resets are available from the{" "}
-              <button onClick={() => router.navigate("/reset")} className="text-violet-300 hover:text-violet-200">reset page</button>.
+              <button onClick={() => router.navigate("/reset")} className="text-white underline decoration-white/30 underline-offset-2 hover:decoration-white">reset page</button>.
             </p>
             {user.isDemo && (
               <p className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-200/80">

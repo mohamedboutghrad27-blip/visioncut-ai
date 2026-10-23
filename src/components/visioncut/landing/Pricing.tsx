@@ -6,7 +6,6 @@ import { useRouter } from "@/lib/router";
 import { useAuth } from "@/components/visioncut/AuthContext";
 import { Check, Minus } from "@/components/visioncut/landing/icons";
 import { cn } from "@/lib/utils";
-import { Sparkles } from "lucide-react";
 
 type PlanFeature = { label: string; included: boolean };
 
@@ -92,7 +91,7 @@ export function PricingSection({ id = "pricing", compact = false }: { id?: strin
   };
 
   return (
-    <section id={id} className="scroll-mt-20 py-24 lg:py-32">
+    <section id={id} className="scroll-mt-20 border-t border-white/[0.08] py-24 lg:py-32">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {!compact && (
           <SectionHeading
@@ -102,26 +101,26 @@ export function PricingSection({ id = "pricing", compact = false }: { id?: strin
           />
         )}
 
-        <div className="mt-14 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="mt-14 grid grid-cols-1 gap-4 lg:grid-cols-3">
           {PLANS.map((plan, i) => (
             <Reveal key={plan.id} delay={i * 100}>
               <div
                 className={cn(
-                  "relative flex h-full flex-col rounded-2xl border p-7 transition-all duration-300",
+                  "relative flex h-full flex-col rounded-xl border p-7 transition-all duration-300",
                   plan.highlight
-                    ? "border-violet-400/50 bg-gradient-to-b from-violet-950/40 to-[#0b0b12] shadow-[0_0_60px_-18px_rgba(139,92,246,0.55)]"
-                    : "border-white/10 bg-[#0b0b12]/80 hover:border-white/20"
+                    ? "border-white/25 bg-[#0a0a0a] shadow-[0_0_80px_-24px_rgba(255,255,255,0.35)]"
+                    : "border-white/[0.08] bg-white/[0.015] hover:border-white/20"
                 )}
               >
                 {plan.highlight && (
-                  <span className="absolute -top-3.5 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-600 to-cyan-400 px-3.5 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow-lg">
-                    <Sparkles className="h-3 w-3" /> Most Popular
+                  <span className="absolute -top-3 left-6 inline-flex items-center gap-1.5 rounded-full bg-[#ededf2] px-3 py-1 text-[11px] font-medium text-black">
+                    Most Popular
                   </span>
                 )}
-                <h3 className="font-display text-xl font-semibold text-white">{plan.name}</h3>
+                <h3 className="font-display text-xl font-medium text-white">{plan.name}</h3>
                 <p className="mt-1 text-[13px] text-zinc-500">{plan.tagline}</p>
                 <div className="mt-5 flex items-end gap-2">
-                  <span className="font-display text-[2.6rem] font-bold leading-none text-white">{plan.priceMonthly}</span>
+                  <span className="font-display text-[2.6rem] font-semibold leading-none tracking-tight text-white">{plan.priceMonthly}</span>
                   <span className="pb-1 text-sm text-zinc-500">/ month</span>
                 </div>
                 <p className="mt-2 min-h-8 text-[11px] leading-relaxed text-zinc-600">{plan.priceNote}</p>
@@ -130,7 +129,7 @@ export function PricingSection({ id = "pricing", compact = false }: { id?: strin
                   {plan.features.map((f) => (
                     <li key={f.label} className="flex items-start gap-2.5 text-[13px]">
                       {f.included ? (
-                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-zinc-200" />
                       ) : (
                         <Minus className="mt-0.5 h-4 w-4 shrink-0 text-zinc-700" />
                       )}
@@ -142,10 +141,10 @@ export function PricingSection({ id = "pricing", compact = false }: { id?: strin
                 <button
                   onClick={() => choosePlan(plan)}
                   className={cn(
-                    "mt-7 w-full rounded-xl py-3 text-sm font-semibold transition-all duration-300",
+                    "mt-7 w-full rounded-lg py-3 text-sm font-medium transition-all duration-200",
                     plan.highlight
-                      ? "bg-gradient-to-r from-violet-600 to-cyan-400 text-white shadow-[0_0_24px_-6px_rgba(139,92,246,0.7)] hover:brightness-110"
-                      : "border border-white/12 bg-white/[0.04] text-zinc-200 hover:border-violet-400/40 hover:bg-white/[0.08] hover:text-white"
+                      ? "bg-[#ededf2] text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] hover:bg-white"
+                      : "border border-white/12 bg-white/[0.02] text-zinc-200 hover:border-white/25 hover:bg-white/[0.06] hover:text-white"
                   )}
                 >
                   {plan.cta}

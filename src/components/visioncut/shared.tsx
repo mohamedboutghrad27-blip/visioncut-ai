@@ -10,7 +10,13 @@ export function Logo({ size = "md", withWordmark = true }: { size?: "sm" | "md" 
   const text = size === "sm" ? "text-base" : size === "lg" ? "text-2xl" : "text-lg";
   return (
     <span className="inline-flex items-center gap-2.5 select-none">
-      <span className={cn("relative inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 via-indigo-500 to-cyan-400 shadow-[0_0_18px_rgba(139,92,246,0.45)]", dims)}>
+      {/* Monochrome mark: white glyph on near-black tile, hairline border (Resend-style) */}
+      <span
+        className={cn(
+          "relative inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
+          dims
+        )}
+      >
         <svg viewBox="0 0 24 24" fill="none" className="h-[58%] w-[58%] text-white" aria-hidden>
           <path d="M4 5h3.2L10 14.4 12.8 5H16l-4.4 13H8.4L4 5z" fill="currentColor" />
           <circle cx="17.4" cy="16.6" r="2.1" fill="currentColor" opacity="0.9" />
@@ -18,7 +24,7 @@ export function Logo({ size = "md", withWordmark = true }: { size?: "sm" | "md" 
       </span>
       {withWordmark && (
         <span className={cn("font-display font-semibold tracking-tight text-white", text)}>
-          VisionCut <span className="text-gradient">AI</span>
+          VisionCut <span className="text-zinc-400">AI</span>
         </span>
       )}
     </span>
@@ -78,18 +84,20 @@ export function SectionHeading({
 }) {
   return (
     <Reveal className={cn("max-w-3xl", align === "center" ? "mx-auto text-center" : "text-left")}>
-      <span className="inline-flex items-center gap-2 rounded-full border border-violet-500/25 bg-violet-500/10 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-300">
+      {/* Resend-style eyebrow: quiet mono label instead of a colored pill */}
+      <span className="inline-flex items-center gap-2 font-mono text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
+        <span className="inline-block h-1 w-1 rounded-full bg-zinc-600" aria-hidden />
         {eyebrow}
       </span>
-      <h2 className="font-display mt-5 text-3xl font-bold leading-[1.12] text-white sm:text-4xl lg:text-[2.75rem]">
+      <h2 className="font-display mt-5 text-3xl font-semibold leading-[1.15] tracking-tight text-white sm:text-4xl lg:text-[2.75rem]">
         {title}
       </h2>
-      {description && <p className="mt-4 text-base leading-relaxed text-zinc-400 sm:text-lg">{description}</p>}
+      {description && <p className="mt-4 text-base leading-relaxed text-zinc-400 sm:text-lg text-pretty">{description}</p>}
     </Reveal>
   );
 }
 
-/* ---------------- Buttons ---------------- */
+/* ---------------- Buttons (Resend-style: white primary / hairline ghost) ---------------- */
 
 export function GradientButton({
   children,
@@ -100,11 +108,10 @@ export function GradientButton({
     <button
       {...props}
       className={cn(
-        "group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-violet-600 via-indigo-500 to-cyan-400 px-6 py-3 text-sm font-semibold text-white transition-all duration-300 hover:shadow-[0_8px_40px_-6px_rgba(139,92,246,0.65)] hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
+        "group relative inline-flex items-center justify-center gap-2 rounded-lg bg-[#ededf2] px-6 py-3 text-sm font-medium text-black shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.6)] transition-all duration-200 hover:bg-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
     >
-      <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
       <span className="relative z-10 inline-flex items-center gap-2">{children}</span>
     </button>
   );
@@ -119,7 +126,7 @@ export function GhostButton({
     <button
       {...props}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[0.04] px-6 py-3 text-sm font-semibold text-zinc-200 transition-all duration-300 hover:border-violet-400/40 hover:bg-white/[0.08] hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/[0.02] px-6 py-3 text-sm font-medium text-zinc-200 transition-all duration-200 hover:border-white/25 hover:bg-white/[0.06] hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
     >
@@ -134,7 +141,7 @@ export function SampleBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300",
+        "inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400",
         className
       )}
       title="This is sample content shown for demonstration purposes"
@@ -147,12 +154,12 @@ export function SampleBadge({ className }: { className?: string }) {
 /* ---------------- Thumbnail placeholder (cinematic, deterministic) ---------------- */
 
 const THUMB_GRADIENTS = [
-  "from-violet-600/50 via-indigo-600/30 to-cyan-500/30",
-  "from-cyan-500/40 via-blue-600/30 to-violet-600/40",
-  "from-fuchsia-500/40 via-purple-600/30 to-indigo-500/30",
-  "from-amber-500/35 via-rose-500/30 to-purple-600/30",
-  "from-emerald-500/35 via-teal-500/30 to-cyan-500/40",
-  "from-blue-500/40 via-violet-500/30 to-fuchsia-500/30",
+  "from-zinc-700/40 via-zinc-800/40 to-zinc-950",
+  "from-slate-700/40 via-slate-800/40 to-zinc-950",
+  "from-neutral-600/35 via-neutral-800/45 to-zinc-950",
+  "from-stone-600/30 via-stone-800/40 to-zinc-950",
+  "from-zinc-600/35 via-zinc-800/45 to-zinc-950",
+  "from-slate-600/30 via-neutral-800/45 to-zinc-950",
 ];
 
 export function ThumbGradient({ seed, className }: { seed: string; className?: string }) {

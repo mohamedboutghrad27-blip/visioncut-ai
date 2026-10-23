@@ -35,7 +35,7 @@ export function HowItWorks() {
   const router = useRouter();
   const { user } = useAuth();
   return (
-    <section id="how-it-works" className="relative scroll-mt-20 border-y border-white/6 bg-white/[0.015] py-24 lg:py-28">
+    <section id="how-it-works" className="relative scroll-mt-20 border-t border-white/[0.08] py-24 lg:py-28">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
           eyebrow="How it works"
@@ -43,19 +43,19 @@ export function HowItWorks() {
           description="A workflow designed to remove friction — so you spend time creating, not fighting the tool."
         />
 
-        <div className="relative mt-16 grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="relative mt-16 grid grid-cols-1 gap-4 md:grid-cols-3">
           {/* connector line */}
-          <div className="pointer-events-none absolute left-[16%] right-[16%] top-10 hidden h-px bg-gradient-to-r from-violet-500/40 via-indigo-400/30 to-cyan-400/40 md:block" aria-hidden />
+          <div className="pointer-events-none absolute left-[16%] right-[16%] top-10 hidden h-px bg-gradient-to-r from-transparent via-white/20 to-transparent md:block" aria-hidden />
           {STEPS.map((s, i) => (
             <Reveal key={s.step} delay={i * 120}>
-              <div className="relative flex h-full flex-col items-center rounded-2xl border border-white/8 bg-[#0b0b12]/80 p-8 text-center">
-                <div className="relative z-10 mb-5 flex h-20 w-20 items-center justify-center rounded-2xl border border-violet-400/25 bg-gradient-to-br from-violet-600/25 to-cyan-500/15 shadow-[0_0_30px_-6px_rgba(139,92,246,0.5)]">
-                  <s.icon className="h-8 w-8 text-violet-200" />
-                  <span className="absolute -right-2 -top-2 rounded-full bg-gradient-to-r from-violet-600 to-cyan-400 px-2 py-0.5 text-[10px] font-bold text-white">
+              <div className="relative flex h-full flex-col items-center rounded-xl border border-white/[0.08] bg-white/[0.015] p-8 text-center">
+                <div className="relative z-10 mb-5 flex h-14 w-14 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-zinc-300">
+                  <s.icon className="h-6 w-6" />
+                  <span className="absolute -right-2 -top-2 rounded-full border border-white/15 bg-[#0a0a0a] px-2 py-0.5 font-mono text-[10px] font-medium text-zinc-300">
                     {s.step}
                   </span>
                 </div>
-                <h3 className="font-display text-lg font-semibold text-white">{s.title}</h3>
+                <h3 className="font-display text-lg font-medium text-white">{s.title}</h3>
                 <p className="mt-3 text-sm leading-relaxed text-zinc-400">{s.description}</p>
               </div>
             </Reveal>

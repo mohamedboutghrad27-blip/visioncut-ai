@@ -18,14 +18,15 @@ function PageHero({ eyebrow, title, subtitle }: { eyebrow: string; title: React.
   return (
     <section className="relative overflow-hidden pb-10 pt-32 sm:pt-36">
       <div className="pointer-events-none absolute inset-0" aria-hidden>
-        <div className="absolute inset-0 bg-grid [mask-image:radial-gradient(ellipse_60%_50%_at_50%_30%,black,transparent)]" />
-        <div className="absolute left-1/2 top-0 h-[380px] w-[680px] -translate-x-1/2 rounded-full bg-violet-600/15 blur-[130px]" />
+        <div className="absolute inset-0 bg-dots [mask-image:radial-gradient(ellipse_60%_50%_at_50%_30%,black,transparent)]" />
+        <div className="absolute left-1/2 top-0 h-[380px] w-[680px] -translate-x-1/2 rounded-full bg-white/[0.06] blur-[130px]" />
       </div>
       <Reveal className="relative mx-auto max-w-3xl px-4 text-center sm:px-6">
-        <span className="inline-flex items-center rounded-full border border-violet-500/25 bg-violet-500/10 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-300">
+        <span className="inline-flex items-center gap-2 font-mono text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
+          <span className="inline-block h-1 w-1 rounded-full bg-zinc-600" aria-hidden />
           {eyebrow}
         </span>
-        <h1 className="font-display mt-5 text-4xl font-bold leading-tight text-white sm:text-5xl">{title}</h1>
+        <h1 className="font-display mt-5 text-4xl font-semibold leading-[1.1] tracking-tight text-white sm:text-5xl">{title}</h1>
         <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">{subtitle}</p>
       </Reveal>
     </section>
@@ -173,7 +174,7 @@ export function HelpPage() {
               <Reveal key={s.title} delay={i * 80}>
                 <div className="h-full rounded-2xl border border-white/8 bg-white/[0.025] p-6">
                   <div className="mb-4 flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/25 to-cyan-500/10 text-violet-300">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-zinc-300">
                       <s.icon className="h-5 w-5" />
                     </span>
                     <h2 className="font-display text-lg font-semibold text-white">{s.title}</h2>
@@ -181,7 +182,7 @@ export function HelpPage() {
                   <ul className="space-y-2.5">
                     {s.items.map((item, j) => (
                       <li key={j} className="flex gap-2.5 text-[13px] leading-relaxed text-zinc-400">
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400/60" />
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-500" />
                         {item}
                       </li>
                     ))}
@@ -192,9 +193,9 @@ export function HelpPage() {
           </div>
 
           <Reveal className="mt-10">
-            <div className="flex flex-col items-center justify-between gap-5 rounded-2xl border border-violet-400/20 bg-gradient-to-r from-violet-950/40 to-cyan-950/20 p-7 sm:flex-row">
+            <div className="flex flex-col items-center justify-between gap-5 rounded-xl border border-white/12 bg-white/[0.02] p-7 sm:flex-row">
               <div className="flex items-start gap-4">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/20 text-violet-200">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-zinc-200">
                   <MessageCircle className="h-5 w-5" />
                 </span>
                 <div>
@@ -206,7 +207,7 @@ export function HelpPage() {
               </div>
               <a
                 href="mailto:support@visioncut.ai"
-                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-400 px-6 text-sm font-semibold text-white transition-all hover:brightness-110"
+                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#ededf2] px-6 text-sm font-medium text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-all hover:bg-white"
               >
                 <HelpCircle className="h-4 w-4" /> support@visioncut.ai
               </a>

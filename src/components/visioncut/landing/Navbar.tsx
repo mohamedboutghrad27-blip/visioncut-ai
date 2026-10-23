@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ChevronDown, Globe, LayoutDashboard, LogOut, Menu, Settings, Sparkles, UserRound } from "lucide-react";
+import { ChevronDown, Globe, LayoutDashboard, LogOut, Menu, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
@@ -114,12 +114,12 @@ export function Navbar() {
                 <ChevronDown className="h-3.5 w-3.5 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="border-white/10 bg-[#101018]">
+            <DropdownMenuContent align="end" className="border-white/10 bg-[#0f0f0f]">
               {LANGUAGES.map((l) => (
                 <DropdownMenuItem
                   key={l.code}
                   onClick={() => setLanguage(l.code)}
-                  className={cn("text-zinc-300 hover:!bg-white/10 hover:text-white", language === l.code && "text-violet-300")}
+                  className={cn("text-zinc-300 hover:!bg-white/10 hover:text-white", language === l.code && "text-white")}
                 >
                   {l.label}
                 </DropdownMenuItem>
@@ -132,7 +132,7 @@ export function Navbar() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-zinc-300 hover:text-white"
+                className="text-zinc-400 hover:text-white"
                 onClick={() => {
                   router.navigate("/dashboard");
                   window.scrollTo({ top: 0 });
@@ -146,19 +146,19 @@ export function Navbar() {
                     <Avatar className="h-8 w-8 border border-white/15">
                       <AvatarFallback
                         className="text-xs font-bold text-white"
-                        style={{ background: `linear-gradient(135deg, ${user.avatarColor}, #0b0b12)` }}
+                        style={{ background: `linear-gradient(135deg, ${user.avatarColor}, #0a0a0a)` }}
                       >
                         {(user.name || user.email).slice(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52 border-white/10 bg-[#101018]">
-                  <div className="border-b border-white/8 px-3 py-2.5">
+                <DropdownMenuContent align="end" className="w-52 border-white/10 bg-[#0f0f0f]">
+                  <div className="border-b border-white/10 px-3 py-2.5">
                     <p className="truncate text-sm font-medium text-white">{user.name || "Creator"}</p>
                     <p className="truncate text-xs text-zinc-500">{user.email}</p>
                     {user.isDemo && (
-                      <p className="mt-1 inline-block rounded bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                      <p className="mt-1 inline-block rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
                         Demo account
                       </p>
                     )}
@@ -182,10 +182,10 @@ export function Navbar() {
               </DropdownMenu>
               <Button
                 size="sm"
-                className="bg-gradient-to-r from-violet-600 to-cyan-400 font-semibold text-white shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all hover:brightness-110"
+                className="bg-[#ededf2] font-medium text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-colors hover:bg-white"
                 onClick={() => router.navigate("/dashboard")}
               >
-                <Sparkles className="h-4 w-4" /> Start Editing Free
+                Start Editing Free
               </Button>
             </>
           ) : (
@@ -193,23 +193,23 @@ export function Navbar() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-zinc-300 hover:text-white"
+                className="text-zinc-400 hover:text-white"
                 onClick={() => {
                   router.navigate("/login");
                   window.scrollTo({ top: 0 });
                 }}
               >
-                <UserRound className="h-4 w-4" /> Sign In
+                Sign In
               </Button>
               <Button
                 size="sm"
-                className="bg-gradient-to-r from-violet-600 to-cyan-400 font-semibold text-white shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all hover:brightness-110"
+                className="bg-[#ededf2] font-medium text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-colors hover:bg-white"
                 onClick={() => {
                   router.navigate("/signup");
                   window.scrollTo({ top: 0 });
                 }}
               >
-                <Sparkles className="h-4 w-4" /> Start Editing Free
+                Start Editing Free
               </Button>
             </>
           )}
@@ -249,13 +249,14 @@ export function Navbar() {
               {user ? (
                 <>
                   <Button
-                    className="flex-1 bg-white/8 text-zinc-200 hover:bg-white/12"
+                    className="flex-1 border border-white/15 bg-transparent text-zinc-200 hover:bg-white/5 hover:text-white"
+                    variant="outline"
                     onClick={() => (router.navigate("/dashboard"), setMobileOpen(false))}
                   >
                     Dashboard
                   </Button>
                   <Button
-                    className="flex-1 bg-gradient-to-r from-violet-600 to-cyan-400 font-semibold text-white"
+                    className="flex-1 bg-[#ededf2] font-medium text-black hover:bg-white"
                     onClick={() => (router.navigate("/dashboard"), setMobileOpen(false))}
                   >
                     Start Editing
@@ -264,13 +265,14 @@ export function Navbar() {
               ) : (
                 <>
                   <Button
-                    className="flex-1 bg-white/8 text-zinc-200 hover:bg-white/12"
+                    className="flex-1 border border-white/15 bg-transparent text-zinc-200 hover:bg-white/5 hover:text-white"
+                    variant="outline"
                     onClick={() => (router.navigate("/login"), setMobileOpen(false))}
                   >
                     Sign In
                   </Button>
                   <Button
-                    className="flex-1 bg-gradient-to-r from-violet-600 to-cyan-400 font-semibold text-white"
+                    className="flex-1 bg-[#ededf2] font-medium text-black hover:bg-white"
                     onClick={() => (router.navigate("/signup"), setMobileOpen(false))}
                   >
                     Start Editing Free

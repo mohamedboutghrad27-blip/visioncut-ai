@@ -38,7 +38,7 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-16">
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <div className="absolute inset-0 bg-grid [mask-image:radial-gradient(ellipse_60%_50%_at_50%_40%,black,transparent)]" />
-        <div className="absolute left-1/2 top-1/4 h-[420px] w-[640px] -translate-x-1/2 rounded-full bg-violet-600/15 blur-[130px]" />
+        <div className="absolute left-1/2 top-1/4 h-[420px] w-[640px] -translate-x-1/2 rounded-full bg-white/[0.05] blur-[130px]" />
       </div>
       <div className="relative w-full max-w-md">
         <button
@@ -65,7 +65,7 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
 function DemoNote() {
   return (
     <div className="mt-5 flex gap-2.5 rounded-xl border border-white/8 bg-white/[0.02] p-3">
-      <Info className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />
+      <Info className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" />
       <p className="text-[11px] leading-relaxed text-zinc-500">
         Real authentication with a database is active — accounts are private to you. A clearly-labeled
         <strong className="text-zinc-400"> demo account</strong> with example projects is also available.
@@ -123,13 +123,13 @@ export function LoginPage() {
             id="login-email" type="email" autoComplete="email" placeholder="you@studio.com"
             aria-invalid={fe.isField("email") || undefined} aria-describedby={fe.isField("email") ? "login-error" : undefined}
             value={email} onChange={(e) => setEmail(e.target.value)}
-            className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40"
+            className="border-white/10 bg-black/40 focus-visible:ring-white/30"
           />
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label htmlFor="login-password" className="text-zinc-300">Password</Label>
-            <button type="button" onClick={() => router.navigate("/reset")} className="text-xs text-violet-300 hover:text-violet-200">
+            <button type="button" onClick={() => router.navigate("/reset")} className="text-xs text-zinc-300 underline decoration-white/25 underline-offset-2 hover:text-white">
               Forgot password?
             </button>
           </div>
@@ -138,7 +138,7 @@ export function LoginPage() {
               id="login-password" type={showPw ? "text" : "password"} autoComplete="current-password" placeholder="••••••••"
               aria-invalid={fe.isField("password") || undefined} aria-describedby={fe.isField("password") ? "login-error" : undefined}
               value={password} onChange={(e) => setPassword(e.target.value)}
-              className="border-white/10 bg-black/40 pr-10 focus-visible:ring-violet-400/40"
+              className="border-white/10 bg-black/40 pr-10 focus-visible:ring-white/30"
             />
             <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300" aria-label={showPw ? "Hide password" : "Show password"}>
               {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -162,7 +162,7 @@ export function LoginPage() {
       <button
         onClick={startDemo}
         disabled={demoBusy}
-        className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[0.04] py-3 text-sm font-semibold text-zinc-200 transition-all hover:border-violet-400/40 hover:bg-white/[0.08] disabled:opacity-60"
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[0.04] py-3 text-sm font-semibold text-zinc-200 transition-all hover:border-white/25 hover:bg-white/[0.06] disabled:opacity-60"
       >
         {demoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
         {demoBusy ? "Preparing demo…" : "Try the Demo Account"}
@@ -171,7 +171,7 @@ export function LoginPage() {
 
       <p className="mt-6 text-center text-sm text-zinc-500">
         New to VisionCut?{" "}
-        <button onClick={() => router.navigate("/signup")} className="font-semibold text-violet-300 hover:text-violet-200">
+        <button onClick={() => router.navigate("/signup")} className="font-medium text-white underline decoration-white/25 underline-offset-2 hover:decoration-white">
           Create a free account
         </button>
       </p>
@@ -221,11 +221,11 @@ export function SignupPage() {
       <form onSubmit={submit} className="space-y-4" noValidate>
         <div className="space-y-1.5">
           <Label htmlFor="signup-name" className="text-zinc-300">Name</Label>
-          <Input id="signup-name" autoComplete="name" placeholder="Alex Director" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={fe.isField("name") || undefined} aria-describedby={fe.isField("name") ? "signup-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
+          <Input id="signup-name" autoComplete="name" placeholder="Alex Director" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={fe.isField("name") || undefined} aria-describedby={fe.isField("name") ? "signup-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-white/30" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="signup-email" className="text-zinc-300">Email</Label>
-          <Input id="signup-email" type="email" autoComplete="email" placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={fe.isField("email") || undefined} aria-describedby={fe.isField("email") ? "signup-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
+          <Input id="signup-email" type="email" autoComplete="email" placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={fe.isField("email") || undefined} aria-describedby={fe.isField("email") ? "signup-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-white/30" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="signup-password" className="text-zinc-300">Password</Label>
@@ -234,7 +234,7 @@ export function SignupPage() {
               id="signup-password" type={showPw ? "text" : "password"} autoComplete="new-password" placeholder="At least 8 characters"
               aria-invalid={fe.isField("password") || undefined} aria-describedby={fe.isField("password") ? "signup-error" : undefined}
               value={password} onChange={(e) => setPassword(e.target.value)}
-              className="border-white/10 bg-black/40 pr-10 focus-visible:ring-violet-400/40"
+              className="border-white/10 bg-black/40 pr-10 focus-visible:ring-white/30"
             />
             <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300" aria-label={showPw ? "Hide password" : "Show password"}>
               {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -258,7 +258,7 @@ export function SignupPage() {
       <DemoNote />
       <p className="mt-6 text-center text-sm text-zinc-500">
         Already have an account?{" "}
-        <button onClick={() => router.navigate("/login")} className="font-semibold text-violet-300 hover:text-violet-200">
+        <button onClick={() => router.navigate("/login")} className="font-medium text-white underline decoration-white/25 underline-offset-2 hover:decoration-white">
           Sign in
         </button>
       </p>
@@ -346,7 +346,7 @@ export function ResetPage() {
         <form onSubmit={request} className="space-y-4" noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="reset-email" className="text-zinc-300">Email</Label>
-            <Input id="reset-email" type="email" placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={fe.isField("email") || undefined} aria-describedby={fe.isField("email") ? "reset-request-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
+            <Input id="reset-email" type="email" placeholder="you@studio.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={fe.isField("email") || undefined} aria-describedby={fe.isField("email") ? "reset-request-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-white/30" />
           </div>
           {fe.err && <p {...fe.bind("reset-request-error")} className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{fe.err.msg}</p>}
           {notice && (
@@ -365,16 +365,16 @@ export function ResetPage() {
         <form onSubmit={confirm} className="space-y-4" noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="reset-token" className="text-zinc-300">Reset token</Label>
-            <Input id="reset-token" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Paste your token" aria-invalid={fe.isField("token") || undefined} aria-describedby={fe.isField("token") ? "reset-confirm-error" : undefined} className="border-white/10 bg-black/40 font-mono text-xs focus-visible:ring-violet-400/40" />
+            <Input id="reset-token" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Paste your token" aria-invalid={fe.isField("token") || undefined} aria-describedby={fe.isField("token") ? "reset-confirm-error" : undefined} className="border-white/10 bg-black/40 font-mono text-xs focus-visible:ring-white/30" />
           </div>
           {devToken && (
-            <p className="rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-2 font-mono text-[11px] leading-relaxed break-all text-violet-200">
+            <p className="rounded-lg border border-white/15 bg-white/[0.04] px-3 py-2 font-mono text-[11px] leading-relaxed break-all text-zinc-300">
               Dev token: {devToken}
             </p>
           )}
           <div className="space-y-1.5">
             <Label htmlFor="reset-password" className="text-zinc-300">New password</Label>
-            <Input id="reset-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" aria-invalid={fe.isField("password") || undefined} aria-describedby={fe.isField("password") ? "reset-confirm-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-violet-400/40" />
+            <Input id="reset-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters" aria-invalid={fe.isField("password") || undefined} aria-describedby={fe.isField("password") ? "reset-confirm-error" : undefined} className="border-white/10 bg-black/40 focus-visible:ring-white/30" />
           </div>
           {fe.err && <p {...fe.bind("reset-confirm-error")} className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{fe.err.msg}</p>}
           <GradientButton type="submit" disabled={busy} className="w-full">
@@ -388,7 +388,7 @@ export function ResetPage() {
       )}
       <p className="mt-6 text-center text-sm text-zinc-500">
         Remembered it?{" "}
-        <button onClick={() => router.navigate("/login")} className="font-semibold text-violet-300 hover:text-violet-200">
+        <button onClick={() => router.navigate("/login")} className="font-medium text-white underline decoration-white/25 underline-offset-2 hover:decoration-white">
           Sign in
         </button>
       </p>

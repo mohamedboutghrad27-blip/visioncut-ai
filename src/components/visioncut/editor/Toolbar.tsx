@@ -195,7 +195,7 @@ export function Toolbar({ onOpenExport }: { onOpenExport: () => void }) {
 
         <button
           onClick={onOpenExport}
-          className="ml-1 inline-flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-cyan-400 px-3.5 text-xs font-semibold text-white shadow-[0_0_16px_-4px_rgba(139,92,246,0.7)] transition-all hover:brightness-110"
+          className="ml-1 inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#ededf2] px-3.5 text-xs font-medium text-black transition-all hover:bg-white"
         >
           <Download className="h-3.5 w-3.5" /> Export
         </button>

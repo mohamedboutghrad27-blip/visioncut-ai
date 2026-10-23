@@ -219,7 +219,7 @@ export function ExportDialog({ open, onOpenChange, onExported }: { open: boolean
             <button
               onClick={start}
               disabled={!supported.ok}
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-400 text-sm font-semibold text-white shadow-[0_0_24px_-6px_rgba(139,92,246,0.7)] transition-all hover:brightness-110 disabled:opacity-50"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#ededf2] text-sm font-medium text-black transition-all hover:bg-white disabled:opacity-50"
             >
               <Download className="h-4 w-4" /> Start export
             </button>
@@ -229,16 +229,16 @@ export function ExportDialog({ open, onOpenChange, onExported }: { open: boolean
         {phase === "rendering" && (
           <div className="space-y-4 py-2">
             <div className="flex items-center gap-3">
-              <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
+              <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-white">Rendering your video…</p>
                 <p className="truncate text-[11px] text-zinc-500">{stage}</p>
               </div>
-              <span className="font-mono text-sm tabular-nums text-violet-300">{Math.round(progress * 100)}%</span>
+              <span className="font-mono text-sm tabular-nums text-zinc-300">{Math.round(progress * 100)}%</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-white/8">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 transition-[width] duration-300"
+                className="h-full rounded-full bg-zinc-200 transition-[width] duration-300"
                 style={{ width: `${Math.max(2, progress * 100)}%` }}
               />
             </div>
@@ -277,7 +277,7 @@ export function ExportDialog({ open, onOpenChange, onExported }: { open: boolean
               </button>
               <button
                 onClick={() => onOpenChange(false)}
-                className="inline-flex h-10 flex-1 items-center justify-center rounded-xl bg-gradient-to-r from-violet-600 to-cyan-400 text-xs font-semibold text-white hover:brightness-110"
+                className="inline-flex h-10 flex-1 items-center justify-center rounded-lg bg-[#ededf2] text-xs font-medium text-black hover:bg-white"
               >
                 Done
               </button>
