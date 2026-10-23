@@ -90,7 +90,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${inter.variable} ${geistMono.variable} font-sans antialiased bg-background text-foreground`}
       >
         {/* Marks JS availability before paint: reveal animations only hide content when JS runs
             (ui-ux-pro-max no-JS fallback rule). Body-top inline script executes before any
