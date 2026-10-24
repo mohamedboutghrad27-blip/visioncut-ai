@@ -144,10 +144,11 @@ async function generateWavespeedImage(opts: ImageGenOptions, key: string): Promi
   if (status === 401) {
     throw new ImageError("The WaveSpeed API key was rejected (401). Check WAVESPEED_API_KEY.", 502, "wavespeed");
   }
-  if (status === 402 || status === 403) {
-    const detail = (body as { message?: string } | null)?.message || "";
+  const detail = (body as { message?: string } | null)?.message || "";
+  // WaveSpeed reports an empty balance as 402/403 or as 400 "Insufficient credits".
+  if (status === 402 || status === 403 || (status === 400 && /insufficient/i.test(detail))) {
     throw new ImageError(
-      `WaveSpeed rejected the task (${status}) — the account may be out of credits. ${detail}`.trim(),
+      `WaveSpeed credits are exhausted (${status}) — falling back to the free engine. Top up at https://console.wavespeed.ai/billing. ${detail}`.trim(),
       502,
       "wavespeed",
     );

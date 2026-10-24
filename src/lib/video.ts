@@ -661,7 +661,10 @@ export async function submitVideoGeneration(
       return result;
     } catch (err) {
       const ve = err instanceof VideoError ? err : new VideoError(String(err), 502, provider);
-      if (ve.status === 402 && provider === "wavespeed") wavespeedOutOfCredits = true;
+      // WaveSpeed reports an empty balance as 402 or as 400 "Insufficient credits".
+      if (provider === "wavespeed" && (ve.status === 402 || /insufficient credits/i.test(ve.message))) {
+        wavespeedOutOfCredits = true;
+      }
       // Sandbox-only provider (zai) outside the sandbox or any pinned failure stops the chain.
       if (pinned) throw ve;
       const short = ve.message.replace(/\s+/g, " ").slice(0, 180);
