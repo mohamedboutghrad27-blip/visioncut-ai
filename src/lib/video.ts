@@ -19,7 +19,11 @@
  *   WAVESPEED_VIDEO_MODEL  default "wavespeed-ai/wan-2.2/t2v-480p-ultra-fast"
  *                          ($0.01/video — catalog: GET /api/v3/models; quality
  *                          mode auto-upgrades to the 720p tier at $0.02)
- *   KIE_VIDEO_MODEL        default "veo3-fast"
+ *   KIE_VIDEO_MODEL        default "grok-imagine/text-to-video" (Market slug — ~$0.012/s at
+ *                          480p, cheapest t2v; catalog: GET https://api.kie.ai/api/v1/models —
+ *                          current-gen slugs incl. bytedance/seedance-2-fast, wan/3-0-video,
+ *                          kling-3.0/video, minimax-h3/text-to-video, veo-3-1. NOTE: legacy
+ *                          slugs like "veo3-fast" were retired and 401/422 on createTask)
  *   PIXVERSE_VIDEO_MODEL   default "v4.5"
  *
  * `auto` resolution order:
@@ -119,7 +123,7 @@ function providerModel(provider: VideoProviderName): string {
     case "wavespeed":
       return env("WAVESPEED_VIDEO_MODEL") || "wavespeed-ai/wan-2.2/t2v-480p-ultra-fast";
     case "kie":
-      return env("KIE_VIDEO_MODEL") || "veo3-fast";
+      return env("KIE_VIDEO_MODEL") || "grok-imagine/text-to-video";
     case "pixverse":
       return env("PIXVERSE_VIDEO_MODEL") || "v4.5";
     case "higgsfield":
@@ -399,7 +403,12 @@ async function submitKie(opts: VideoSubmitOptions, key: string, model: string): 
   const body2 = body as { code?: number; msg?: string; data?: { taskId?: string } } | null;
   if (body2?.code && body2.code !== 200) {
     if (body2.code === 401) {
-      throw new VideoError("The kie API key was rejected (401). Check VIDEO_API_KEY.", 502, "kie");
+      throw new VideoError(
+        "KIE.AI rejected the task (401: not authorized for this model). Check the key's permissions at kie.ai/api-key, " +
+          "the account's model access, and that KIE_VIDEO_MODEL is a current Market slug (legacy slugs like veo3-fast are retired).",
+        502,
+        "kie",
+      );
     }
     throw new VideoError(`KIE.AI error ${body2.code}: ${body2.msg || "unknown"}`, 502, "kie");
   }
@@ -639,6 +648,22 @@ export async function getWavespeedBalance(): Promise<number | null> {
   }
 }
 
+/** Live KIE.AI credit balance (null when unknown/unavailable). Never leaks the key. */
+export async function getKieCredit(): Promise<number | null> {
+  const key = env("KIE_API_KEY");
+  if (!key) return null;
+  try {
+    const { body, status } = await httpJson("kie", "https://api.kie.ai/api/v1/chat/credit", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (status !== 200) return null;
+    const credit = (body as { data?: number } | null)?.data;
+    return typeof credit === "number" ? credit : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Submit a text-to-video task using the configured provider chain.
  * In `auto` mode, auth/billing failures on external providers fall through
@@ -675,10 +700,16 @@ export async function submitVideoGeneration(
   }
   if (wavespeedOutOfCredits) {
     const bal = await getWavespeedBalance();
+    const others = failures
+      .filter((f) => !f.startsWith("wavespeed:"))
+      .join(" | ")
+      .slice(0, 400);
     throw new VideoError(
-      `WaveSpeed credits are exhausted${bal !== null ? ` (remaining balance $${bal.toFixed(2)})` : ""}. ` +
-        "Video is the only engine without a free fallback — top up at https://console.wavespeed.ai/billing to restore video generation. " +
-        "Images and voiceover keep working via the free engines.",
+      `WaveSpeed credits are exhausted${bal !== null ? ` (remaining balance $${bal.toFixed(2)})` : ""} — ` +
+        "top up at https://console.wavespeed.ai/billing. " +
+        (others
+          ? `Other configured video providers also refused the task — ${others}`
+          : "No other video provider key is configured (kie/fal/pixverse/higgsfield)."),
       402,
       "wavespeed",
     );
