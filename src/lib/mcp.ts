@@ -307,7 +307,7 @@ async function toolStatus(): Promise<McpToolResult> {
   const lines = [
     "VisionCut AI — engine status",
     `- script/LLM: provider=${llmDiagnostics().provider}, custom key=${llmDiagnostics().custom.hasKey}, model=${llmDiagnostics().custom.model}`,
-    `- image: provider=${imageDiagnostics().provider}, wavespeed key=${imageDiagnostics().keys.wavespeed}, model=${imageDiagnostics().models.wavespeed}`,
+    `- image: provider=${imageDiagnostics().provider}, wavespeed key=${imageDiagnostics().keys.wavespeed}, model=${imageDiagnostics().models.wavespeed}, kie opt-in=${imageDiagnostics().keys.kie ? imageDiagnostics().models.kie : "no key"} (set IMAGE_PROVIDER=kie)`,
     `- voiceover: provider=${voiceoverDiagnostics().provider}, wavespeed key=${voiceoverDiagnostics().keys.wavespeed}, fast=${voiceoverDiagnostics().models.wavespeedFast}, hd=${voiceoverDiagnostics().models.wavespeedHd}`,
     `- video: provider=${videoDiagnostics().provider}, wavespeed key=${videoDiagnostics().keys.wavespeed}, kie=${videoDiagnostics().keys.kie ? kieText : "no key"}`,
     `- free fallbacks (auto-engage when WaveSpeed fails or is out of credits): image→pollinations.ai, voiceover→google-translate-tts. Video has NO free fallback.`,

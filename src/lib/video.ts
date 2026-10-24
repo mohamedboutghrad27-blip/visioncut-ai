@@ -19,11 +19,14 @@
  *   WAVESPEED_VIDEO_MODEL  default "wavespeed-ai/wan-2.2/t2v-480p-ultra-fast"
  *                          ($0.01/video — catalog: GET /api/v3/models; quality
  *                          mode auto-upgrades to the 720p tier at $0.02)
- *   KIE_VIDEO_MODEL        default "grok-imagine/text-to-video" (Market slug — ~$0.012/s at
- *                          480p, cheapest t2v; catalog: GET https://api.kie.ai/api/v1/models —
- *                          current-gen slugs incl. bytedance/seedance-2-fast, wan/3-0-video,
- *                          kling-3.0/video, minimax-h3/text-to-video, veo-3-1. NOTE: legacy
- *                          slugs like "veo3-fast" were retired and 401/422 on createTask)
+ *   KIE_VIDEO_MODEL        default "minimax-h3/text-to-video" (Hailuo-03 — VERIFIED live on the
+ *                          user's account: 5s task completed end-to-end with native stereo audio.
+ *                          Billing observed: 13 credits/s (2K default) — 65 credits for 5s; the
+ *                          catalog also lists a 768P rate (8 credits/s) but no resolution input
+ *                          field is documented. Other account-authorized slugs: wan/3-0-video-prime
+ *                          (12.2 cr/s @480p), kling-4.0/keyframe-to-video, kling-4.0/reference-to-video.
+ *                          Catalog: GET https://api.kie.ai/api/v1/models. Input schema (verified):
+ *                          { prompt, aspect_ratio, duration } — aspect_ratio IS required in practice.)
  *   PIXVERSE_VIDEO_MODEL   default "v4.5"
  *
  * `auto` resolution order:
@@ -123,7 +126,7 @@ function providerModel(provider: VideoProviderName): string {
     case "wavespeed":
       return env("WAVESPEED_VIDEO_MODEL") || "wavespeed-ai/wan-2.2/t2v-480p-ultra-fast";
     case "kie":
-      return env("KIE_VIDEO_MODEL") || "grok-imagine/text-to-video";
+      return env("KIE_VIDEO_MODEL") || "minimax-h3/text-to-video";
     case "pixverse":
       return env("PIXVERSE_VIDEO_MODEL") || "v4.5";
     case "higgsfield":
@@ -395,17 +398,20 @@ async function pollWavespeed(id: string, key: string): Promise<VideoPollResult> 
 /* ------------------------------------------------------------------ */
 
 async function submitKie(opts: VideoSubmitOptions, key: string, model: string): Promise<VideoSubmitResult> {
+  // Verified input schema (minimax-h3/text-to-video, 2026-10): prompt + aspect_ratio + duration.
+  // Omitting aspect_ratio makes Kie reject with a generic 500 "This field is required".
   const { body } = await httpJson("kie", "https://api.kie.ai/api/v1/jobs/createTask", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, input: { prompt: opts.prompt } }),
+    body: JSON.stringify({ model, input: { prompt: opts.prompt, aspect_ratio: "16:9", duration: opts.duration } }),
   });
   const body2 = body as { code?: number; msg?: string; data?: { taskId?: string } } | null;
   if (body2?.code && body2.code !== 200) {
     if (body2.code === 401) {
       throw new VideoError(
         "KIE.AI rejected the task (401: not authorized for this model). Check the key's permissions at kie.ai/api-key, " +
-          "the account's model access, and that KIE_VIDEO_MODEL is a current Market slug (legacy slugs like veo3-fast are retired).",
+          "and that KIE_VIDEO_MODEL is one of the account's authorized slugs (e.g. minimax-h3/text-to-video, " +
+          "wan/3-0-video-prime, kling-4.0/*) — catalog: GET https://api.kie.ai/api/v1/models.",
         502,
         "kie",
       );

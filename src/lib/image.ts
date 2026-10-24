@@ -30,7 +30,7 @@
 
 import ZAI from "z-ai-web-dev-sdk";
 
-export type ImageProviderName = "zai" | "wavespeed" | "pollinations";
+export type ImageProviderName = "zai" | "wavespeed" | "pollinations" | "kie";
 export type ImageProviderSetting = "auto" | ImageProviderName;
 
 export interface ImageGenOptions {
@@ -69,6 +69,8 @@ function providerKey(provider: ImageProviderName): string | undefined {
   switch (provider) {
     case "wavespeed":
       return env("WAVESPEED_API_KEY");
+    case "kie":
+      return env("KIE_API_KEY");
     case "pollinations":
     case "zai":
       return undefined; // pollinations is keyless; the sandbox SDK manages its own credentials
@@ -79,6 +81,11 @@ function providerModel(provider: ImageProviderName): string {
   switch (provider) {
     case "wavespeed":
       return env("WAVESPEED_IMAGE_MODEL") || "wavespeed-ai/z-image/turbo";
+    case "kie":
+      // Kie Market image slugs verified live on the user's account: seedream/5-flash-text-to-image
+      // (3.24 cr/image), grok-imagine-image-2-0/text-to-image (4 cr), qwen3/text-to-image,
+      // qwen2-1/text-to-image, gpt-image-2-5-flare-text-to-image.
+      return env("KIE_IMAGE_MODEL") || "seedream/5-flash-text-to-image";
     case "pollinations":
       return "pollinations-flux";
     case "zai":
@@ -250,6 +257,54 @@ async function generatePollinationsImage(opts: ImageGenOptions): Promise<ImageGe
 }
 
 /* ------------------------------------------------------------------ */
+/* KIE.AI Market images (opt-in: IMAGE_PROVIDER=kie — billed per image) */
+/* ------------------------------------------------------------------ */
+
+async function generateKieImage(opts: ImageGenOptions, key: string): Promise<ImageGenResult> {
+  const model = providerModel("kie");
+  // Verified schema (seedream/5-flash-text-to-image, 2026-10): { prompt, aspect_ratio }.
+  const { body } = await httpJson("kie", "https://api.kie.ai/api/v1/jobs/createTask", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model, input: { prompt: opts.prompt, aspect_ratio: opts.aspectRatio || "16:9" } }),
+  });
+  const created = body as { code?: number; msg?: string; data?: { taskId?: string } } | null;
+  if (created?.code && created.code !== 200) {
+    throw new ImageError(
+      created.code === 401
+        ? "KIE.AI rejected the image task (401: not authorized for this model). Check the key's model access — authorized image slugs on this account: seedream/5-flash-*, grok-imagine-image-2-0/*, qwen3/*, qwen2-1/*, gpt-image-2-5-*."
+        : `KIE.AI error ${created.code}: ${created.msg || "unknown"}`,
+      502,
+      "kie",
+    );
+  }
+  const taskId = created?.data?.taskId;
+  if (!taskId) throw new ImageError("KIE.AI did not return an image task id.", 502, "kie");
+
+  const deadline = Date.now() + GENERATE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    const poll = await httpJson("kie", `https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    const data = (poll.body as { data?: { state?: string; resultJson?: string; failMsg?: string } } | null)?.data;
+    if (data?.state === "success") {
+      let url: string | null = null;
+      try {
+        url = (JSON.parse(data.resultJson || "{}") as { resultUrls?: string[] }).resultUrls?.[0] || null;
+      } catch {
+        /* unparseable resultJson */
+      }
+      if (!url) throw new ImageError("KIE.AI finished but returned no image URL.", 502, "kie");
+      return { imageDataUrl: await fetchAsDataUrl(url), provider: "kie", model };
+    }
+    if (data?.state === "fail") throw new ImageError(data.failMsg || "KIE.AI image task failed.", 502, "kie");
+    // waiting / queuing / generating -> keep polling
+  }
+  throw new ImageError("KIE.AI image generation timed out.", 504, "kie");
+}
+
+/* ------------------------------------------------------------------ */
 /* Z.ai platform SDK (sandbox)                                         */
 /* ------------------------------------------------------------------ */
 
@@ -313,6 +368,11 @@ export async function generateImage(
       if (provider === "pollinations") {
         return await generatePollinationsImage(opts);
       }
+      if (provider === "kie") {
+        const key = providerKey("kie");
+        if (!key) throw new ImageError("KIE_API_KEY is not configured.", 503, "kie");
+        return await generateKieImage(opts, key);
+      }
       return await generateZaiImage(opts);
     } catch (err) {
       const ie = err instanceof ImageError ? err : new ImageError(String(err), 502, provider);
@@ -335,8 +395,8 @@ export async function generateImage(
 export function imageDiagnostics() {
   return {
     provider: env("IMAGE_PROVIDER") || "auto",
-    keys: { wavespeed: !!env("WAVESPEED_API_KEY") },
-    models: { wavespeed: providerModel("wavespeed") },
+    keys: { wavespeed: !!env("WAVESPEED_API_KEY"), kie: !!env("KIE_API_KEY") },
+    models: { wavespeed: providerModel("wavespeed"), kie: providerModel("kie") },
     pollinations: { available: true, note: "free fallback, no key needed" },
     zai: { available: true },
   };
