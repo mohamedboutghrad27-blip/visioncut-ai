@@ -64,6 +64,7 @@ const StoryboardArgs = z.object({
 const ImageArgs = z.object({
   prompt: z.string().trim().min(3).max(1500),
   aspect_ratio: z.enum(["16:9", "9:16", "1:1", "4:5", "21:9"]).optional(),
+  save_to_library: z.boolean().optional(),
 });
 
 const VoiceoverArgs = z.object({
@@ -71,6 +72,7 @@ const VoiceoverArgs = z.object({
   voice: z.enum(["female", "male", "teenager", "child", "elderly", "whisper"]).optional(),
   speed: z.number().min(0.5).max(2).optional(),
   quality: z.enum(["fast", "hd"]).optional(),
+  save_to_library: z.boolean().optional(),
 });
 
 const StartVideoArgs = z.object({
@@ -98,7 +100,7 @@ const ImportMediaArgs = z.object({
 
 const AddToProjectArgs = z.object({
   project_id: z.string().trim().min(3).max(40),
-  media_id: z.string().trim().regex(/^as_[a-z0-9]+$/, "media_id must be an asset id returned by visioncut_import_media"),
+  media_id: z.string().trim().regex(/^as_[a-z0-9]+$/, "media_id must be an asset id (as_...) from visioncut_import_media, visioncut_generate_image or visioncut_generate_voiceover"),
   at_seconds: z.number().min(0).max(3600).optional(),
   duration: z.number().min(0.1).max(600).optional(),
   track_type: z.enum(["video", "audio"]).optional(),
@@ -164,12 +166,13 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: "visioncut_generate_image",
     description:
-      "Generate an image from a text prompt (WaveSpeed z-image/turbo, ~$0.005). Returns the actual image bytes as an MCP image block plus metadata. Supports 16:9, 9:16, 1:1, 4:5, 21:9.",
+      "Generate an image from a text prompt (WaveSpeed z-image/turbo, ~$0.005; free pollinations.ai fallback when WaveSpeed is out of credits; premium opt-in via IMAGE_PROVIDER=kie). Returns the image bytes as an MCP image block AND — by default — saves it into the user's cloud library, returning an asset_id that visioncut_add_to_project can place directly on a timeline (no public URL needed). Set save_to_library=false to skip saving. Supports 16:9, 9:16, 1:1, 4:5, 21:9.",
     inputSchema: {
       type: "object",
       properties: {
         prompt: { type: "string", minLength: 3, maxLength: 1500 },
         aspect_ratio: { type: "string", enum: ["16:9", "9:16", "1:1", "4:5", "21:9"] },
+        save_to_library: { type: "boolean", description: "Save into the cloud library and return an asset_id for timeline placement (default true)" },
       },
       required: ["prompt"],
       additionalProperties: false,
@@ -178,7 +181,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: "visioncut_generate_voiceover",
     description:
-      "Text-to-speech narration (WaveSpeed). Speaks 600+ languages including Arabic. voice: female|male|teenager|child|elderly|whisper. quality: 'fast' ($0.005) or 'hd' ($0.04, higher bitrate). Returns the audio as an MCP audio block.",
+      "Text-to-speech narration (WaveSpeed; free google-translate-tts fallback when WaveSpeed is out of credits). Speaks 600+ languages including Arabic. voice: female|male|teenager|child|elderly|whisper. quality: 'fast' ($0.005) or 'hd' ($0.04). Returns the audio as an MCP audio block AND — by default — saves it into the cloud library with an asset_id for visioncut_add_to_project (audio track). Set save_to_library=false to skip saving.",
     inputSchema: {
       type: "object",
       properties: {
@@ -186,6 +189,7 @@ export const MCP_TOOLS: McpToolDef[] = [
         voice: { type: "string", enum: ["female", "male", "teenager", "child", "elderly", "whisper"] },
         speed: { type: "number", minimum: 0.5, maximum: 2 },
         quality: { type: "string", enum: ["fast", "hd"] },
+        save_to_library: { type: "boolean", description: "Save into the cloud library and return an asset_id (default true)" },
       },
       required: ["text"],
       additionalProperties: false,
@@ -251,7 +255,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: "visioncut_add_to_project",
     description:
-      "Place an imported asset (asset_id from visioncut_import_media) on a project timeline. The clip appears in the user's editor immediately (video/image go to a video track, audio to an audio track; default position: end of that track).",
+      "Place an asset on a project timeline. The clip appears in the user's editor immediately (video/image go to a video track, audio to an audio track; default position: end of that track). media_id accepts asset ids from ANY source: visioncut_import_media (URL), visioncut_generate_image or visioncut_generate_voiceover (saved automatically) — no public URL required.",
     inputSchema: {
       type: "object",
       properties: {
@@ -384,14 +388,20 @@ async function toolGenerateImage(raw: unknown): Promise<McpToolResult> {
   const args = ImageArgs.parse(raw);
   const result = await generateImage({ prompt: args.prompt, aspectRatio: args.aspect_ratio });
   const { mimeType, base64 } = splitDataUrl(result.imageDataUrl);
+  const lines = [
+    `Image generated (${Math.floor((base64.length * 3) / 4)} bytes, ${mimeType}, provider=${result.provider}, model=${result.model}${result.warnings?.length ? `, warnings: ${result.warnings.join(" | ")}` : ""}).`,
+  ];
+  if (args.save_to_library !== false) {
+    try {
+      const userId = await demoUserId();
+      const assetId = await storeInCloudLibrary(userId, Buffer.from(base64, "base64"), mimeType, `AI image — ${args.prompt.slice(0, 60)}`);
+      lines.push(`asset_id: ${assetId}`, "Saved to the cloud library — place it on a timeline with visioncut_add_to_project (the editor restores the bytes automatically; no public URL needed).");
+    } catch (err) {
+      lines.push(`library save failed (${err instanceof Error ? err.message.slice(0, 120) : "db error"}) — the image block above is still usable.`);
+    }
+  }
   return {
-    content: [
-      { type: "image", data: base64, mimeType },
-      {
-        type: "text",
-        text: `Image generated (${Math.floor((base64.length * 3) / 4)} bytes, ${mimeType}, provider=${result.provider}, model=${result.model}${result.warnings?.length ? `, warnings: ${result.warnings.join(" | ")}` : ""}).`,
-      },
-    ],
+    content: [{ type: "image", data: base64, mimeType }, { type: "text", text: lines.join("\n") }],
   };
 }
 
@@ -404,14 +414,20 @@ async function toolGenerateVoiceover(raw: unknown): Promise<McpToolResult> {
     quality: args.quality,
   });
   const { mimeType, base64 } = splitDataUrl(result.audioDataUrl);
+  const lines = [
+    `Voiceover generated (${Math.floor((base64.length * 3) / 4)} bytes, ${mimeType}, voice=${args.voice || "female"}, provider=${result.provider}, model=${result.model}). If your client cannot play the audio block, the base64 data above the metadata is the complete ${mimeType} file.`,
+  ];
+  if (args.save_to_library !== false) {
+    try {
+      const userId = await demoUserId();
+      const assetId = await storeInCloudLibrary(userId, Buffer.from(base64, "base64"), mimeType, `AI voiceover — ${args.text.slice(0, 60)}`);
+      lines.push(`asset_id: ${assetId}`, "Saved to the cloud library — place it on an audio track with visioncut_add_to_project.");
+    } catch (err) {
+      lines.push(`library save failed (${err instanceof Error ? err.message.slice(0, 120) : "db error"}) — the audio block above is still usable.`);
+    }
+  }
   return {
-    content: [
-      { type: "audio", data: base64, mimeType },
-      {
-        type: "text",
-        text: `Voiceover generated (${Math.floor((base64.length * 3) / 4)} bytes, ${mimeType}, voice=${args.voice || "female"}, provider=${result.provider}, model=${result.model}). If your client cannot play the audio block, the base64 data above the metadata is the complete ${mimeType} file.`,
-      },
-    ],
+    content: [{ type: "audio", data: base64, mimeType }, { type: "text", text: lines.join("\n") }],
   };
 }
 
@@ -490,6 +506,27 @@ function newAssetId(): string {
   return `as_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
 }
 
+/**
+ * Store raw media bytes in the user's cloud library (MediaFile + 3MB chunks —
+ * exactly ceil(size/3MB) chunks, the editor's complete-route contract).
+ * Shared by visioncut_import_media (URL downloads) and the generate_* tools
+ * (save_to_library) so AI output can be placed on timelines without a public URL.
+ */
+async function storeInCloudLibrary(userId: string, buf: Buffer, mimeType: string, name: string): Promise<string> {
+  const reAgg = await db.mediaFile.aggregate({ where: { userId }, _sum: { size: true } });
+  if ((reAgg._sum.size ?? 0) + buf.length > MAX_USER_CLOUD_TOTAL) {
+    throw new Error("this file would exceed the 1GB cloud storage quota");
+  }
+  const assetId = newAssetId();
+  await db.mediaFile.create({ data: { id: assetId, userId, name, mimeType, size: buf.length } });
+  const chunks: Prisma.MediaChunkCreateManyInput[] = [];
+  for (let off = 0, idx = 0; off < buf.length; off += CLOUD_CHUNK, idx++) {
+    chunks.push({ fileId: assetId, idx, data: Buffer.from(buf.subarray(off, Math.min(off + CLOUD_CHUNK, buf.length))) });
+  }
+  await db.mediaChunk.createMany({ data: chunks });
+  return assetId;
+}
+
 async function demoUserId(): Promise<string> {
   const user = await db.user.findFirst({ where: { isDemo: true }, select: { id: true } });
   if (!user) throw new Error("No editor account found. Open the VisionCut dashboard once to initialize it, then retry.");
@@ -564,29 +601,15 @@ async function toolImportMedia(raw: unknown): Promise<McpToolResult> {
   if (!kind) return textResult(`Import failed: unsupported file type "${mimeType || "unknown"}". Only video, audio and image files are supported.`, true);
 
   const name = (args.name || decodeURIComponent(url.pathname.split("/").pop() || "Imported media")).slice(0, 80);
-  const assetId = newAssetId();
 
-  // Quota re-check with the real size, then write MediaFile + 3MB chunks
-  // (exactly ceil(size/3MB) chunks — the editor's complete-route contract).
-  const reAgg = await db.mediaFile.aggregate({ where: { userId }, _sum: { size: true } });
-  if ((reAgg._sum.size ?? 0) + buf.length > MAX_USER_CLOUD_TOTAL) {
-    return textResult("Import failed: this file would exceed the 1GB cloud storage quota.", true);
-  }
   try {
-    await db.mediaFile.create({ data: { id: assetId, userId, name, mimeType, size: buf.length } });
-    const chunks: Prisma.MediaChunkCreateManyInput[] = [];
-    for (let off = 0, idx = 0; off < buf.length; off += CLOUD_CHUNK, idx++) {
-      chunks.push({ fileId: assetId, idx, data: Buffer.from(buf.subarray(off, Math.min(off + CLOUD_CHUNK, buf.length))) });
-    }
-    await db.mediaChunk.createMany({ data: chunks });
+    const assetId = await storeInCloudLibrary(userId, buf, mimeType, name);
+    return textResult(
+      `Media imported.\nasset_id: ${assetId}\nname: ${name}\ntype: ${mimeType} (${kind})\nsize: ${buf.length} bytes\n\nPlace it with visioncut_add_to_project (project_id + this asset_id).`,
+    );
   } catch (err) {
-    await db.mediaFile.deleteMany({ where: { id: assetId } }).catch(() => {});
     return textResult(`Import failed while saving: ${err instanceof Error ? err.message.slice(0, 160) : "database error"}.`, true);
   }
-
-  return textResult(
-    `Media imported.\nasset_id: ${assetId}\nname: ${name}\ntype: ${mimeType} (${kind})\nsize: ${buf.length} bytes\n\nPlace it with visioncut_add_to_project (project_id + this asset_id).`,
-  );
 }
 
 interface StoredProjectState {
