@@ -15,8 +15,13 @@
  *
  * `auto` resolution order:
  *   1. `wavespeed` when a key is present (works on Vercel + sandbox)
- *   2. `zai` when a Z.ai platform config is available (sandbox)
- *   3. otherwise a clear error listing what to set
+ *   2. `pollinations` — FREE fallback, no API key (keeps working at $0 balance)
+ *   3. `zai` when a Z.ai platform config is available (sandbox)
+ *   4. otherwise a clear error listing what to set
+ *
+ * When WaveSpeed runs out of credits (402) the chain silently falls through
+ * to Pollinations, so image generation — and everything built on it
+ * (storyboards, MCP generate_image) — keeps working for free.
  *
  * WaveSpeed flow: POST /api/v3/{model} (async) -> poll /api/v3/predictions/
  * {id}/result -> outputs[0] URL -> fetch bytes -> base64 data URL, so the
@@ -25,7 +30,7 @@
 
 import ZAI from "z-ai-web-dev-sdk";
 
-export type ImageProviderName = "zai" | "wavespeed";
+export type ImageProviderName = "zai" | "wavespeed" | "pollinations";
 export type ImageProviderSetting = "auto" | ImageProviderName;
 
 export interface ImageGenOptions {
@@ -64,8 +69,9 @@ function providerKey(provider: ImageProviderName): string | undefined {
   switch (provider) {
     case "wavespeed":
       return env("WAVESPEED_API_KEY");
+    case "pollinations":
     case "zai":
-      return undefined; // sandbox SDK manages its own credentials
+      return undefined; // pollinations is keyless; the sandbox SDK manages its own credentials
   }
 }
 
@@ -73,6 +79,8 @@ function providerModel(provider: ImageProviderName): string {
   switch (provider) {
     case "wavespeed":
       return env("WAVESPEED_IMAGE_MODEL") || "wavespeed-ai/z-image/turbo";
+    case "pollinations":
+      return "pollinations-flux";
     case "zai":
       return "zai-platform-image";
   }
@@ -191,6 +199,56 @@ async function fetchAsDataUrl(url: string): Promise<string> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Pollinations.ai (free fallback — no API key required)               */
+/* ------------------------------------------------------------------ */
+
+const POLLINATIONS_SIZE: Record<string, [number, number]> = {
+  "16:9": [1344, 768],
+  "9:16": [768, 1344],
+  "1:1": [1024, 1024],
+  "4:5": [864, 1152],
+  "21:9": [1440, 720],
+};
+
+async function generatePollinationsImage(opts: ImageGenOptions): Promise<ImageGenResult> {
+  const [width, height] =
+    POLLINATIONS_SIZE[opts.aspectRatio || "16:9"] || POLLINATIONS_SIZE["16:9"];
+  const seed = Math.floor(Math.random() * 1_000_000_000);
+  const url =
+    `https://image.pollinations.ai/prompt/${encodeURIComponent(opts.prompt.slice(0, 900))}` +
+    `?width=${width}&height=${height}&nologo=true&seed=${seed}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    const aborted = err instanceof Error && err.name === "AbortError";
+    throw new ImageError(
+      aborted
+        ? "The free image engine timed out."
+        : "Could not reach the free image engine (pollinations.ai).",
+      aborted ? 504 : 502,
+      "pollinations",
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    throw new ImageError(`The free image engine failed (HTTP ${res.status}).`, 502, "pollinations");
+  }
+  const type = res.headers.get("content-type")?.split(";")[0] || "image/jpeg";
+  if (!type.startsWith("image/")) {
+    throw new ImageError("The free image engine returned a non-image response.", 502, "pollinations");
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length < 512) {
+    throw new ImageError("The free image engine returned an empty image.", 502, "pollinations");
+  }
+  return { imageDataUrl: `data:${type};base64,${buf.toString("base64")}`, provider: "pollinations", model: "pollinations-flux" };
+}
+
+/* ------------------------------------------------------------------ */
 /* Z.ai platform SDK (sandbox)                                         */
 /* ------------------------------------------------------------------ */
 
@@ -230,6 +288,7 @@ function providerOrder(selected: ImageProviderSetting): ImageProviderName[] {
   if (selected !== "auto") return [selected];
   const order: ImageProviderName[] = [];
   if (providerKey("wavespeed")) order.push("wavespeed");
+  order.push("pollinations"); // free — always available as a fallback
   order.push("zai");
   return order;
 }
@@ -249,6 +308,9 @@ export async function generateImage(
         const key = providerKey("wavespeed");
         if (!key) throw new ImageError("WAVESPEED_API_KEY is not configured.", 503, "wavespeed");
         return await generateWavespeedImage(opts, key);
+      }
+      if (provider === "pollinations") {
+        return await generatePollinationsImage(opts);
       }
       return await generateZaiImage(opts);
     } catch (err) {
@@ -274,6 +336,7 @@ export function imageDiagnostics() {
     provider: env("IMAGE_PROVIDER") || "auto",
     keys: { wavespeed: !!env("WAVESPEED_API_KEY") },
     models: { wavespeed: providerModel("wavespeed") },
+    pollinations: { available: true, note: "free fallback, no key needed" },
     zai: { available: true },
   };
 }
