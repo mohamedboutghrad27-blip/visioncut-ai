@@ -18,7 +18,7 @@ import type { Prisma } from "@prisma/client";
 import { generateChatCompletion, extractJsonObject, llmDiagnostics } from "@/lib/llm";
 import { generateImage, imageDiagnostics, ImageError } from "@/lib/image";
 import { generateVoiceover, voiceoverDiagnostics, VoiceoverError } from "@/lib/voiceover";
-import { submitVideoGeneration, pollVideoGeneration, videoDiagnostics, VideoError } from "@/lib/video";
+import { submitVideoGeneration, pollVideoGeneration, videoDiagnostics, getWavespeedBalance, VideoError } from "@/lib/video";
 import { searchStickers, STICKER_GROUPS } from "@/lib/stickers";
 import { db } from "@/lib/db";
 
@@ -300,12 +300,16 @@ async function toolStatus(): Promise<McpToolResult> {
   } catch {
     /* db optional for status */
   }
+  const balance = await getWavespeedBalance().catch(() => null);
+  const balText = balance === null ? "unknown" : `$${balance.toFixed(2)}${balance < 0.05 ? " — LOW, video generation will stop soon" : ""}`;
   const lines = [
     "VisionCut AI — engine status",
     `- script/LLM: provider=${llmDiagnostics().provider}, custom key=${llmDiagnostics().custom.hasKey}, model=${llmDiagnostics().custom.model}`,
     `- image: provider=${imageDiagnostics().provider}, wavespeed key=${imageDiagnostics().keys.wavespeed}, model=${imageDiagnostics().models.wavespeed}`,
     `- voiceover: provider=${voiceoverDiagnostics().provider}, wavespeed key=${voiceoverDiagnostics().keys.wavespeed}, fast=${voiceoverDiagnostics().models.wavespeedFast}, hd=${voiceoverDiagnostics().models.wavespeedHd}`,
     `- video: provider=${videoDiagnostics().provider}, wavespeed key=${videoDiagnostics().keys.wavespeed}`,
+    `- free fallbacks (auto-engage when WaveSpeed fails or is out of credits): image→pollinations.ai, voiceover→google-translate-tts. Video has NO free fallback.`,
+    `- WaveSpeed balance: ${balText}`,
     `- stickers: ~1800 OpenMoji entries, ${STICKER_GROUPS.length} groups, no key needed`,
     `- projects in database: ${projectCount}`,
   ];

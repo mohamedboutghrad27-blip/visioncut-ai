@@ -15,8 +15,10 @@
  *
  * `auto` resolution order:
  *   1. `wavespeed` when a key is present (works on Vercel + sandbox)
- *   2. `zai` when a Z.ai platform config is available (sandbox)
- *   3. otherwise a clear error listing what to set
+ *   2. `google` — FREE fallback via Google Translate TTS, no API key
+ *      (keeps working at $0 balance; single narrator voice, normal/slow speed)
+ *   3. `zai` when a Z.ai platform config is available (sandbox)
+ *   4. otherwise a clear error listing what to set
  *
  * WaveSpeed flow: POST /api/v3/{model} (async) -> poll /api/v3/predictions/
  * {id}/result -> outputs[0] URL -> fetch bytes -> base64 data URL (audio/mpeg),
@@ -32,7 +34,7 @@
 
 import ZAI from "z-ai-web-dev-sdk";
 
-export type VoiceoverProviderName = "zai" | "wavespeed";
+export type VoiceoverProviderName = "zai" | "wavespeed" | "google";
 export type VoiceoverProviderSetting = "auto" | VoiceoverProviderName;
 
 export interface VoiceoverOptions {
@@ -76,8 +78,9 @@ function providerKey(provider: VoiceoverProviderName): string | undefined {
   switch (provider) {
     case "wavespeed":
       return env("WAVESPEED_API_KEY");
+    case "google":
     case "zai":
-      return undefined; // sandbox SDK manages its own credentials
+      return undefined; // google-translate is keyless; the sandbox SDK manages its own credentials
   }
 }
 
@@ -87,6 +90,8 @@ function providerModel(provider: VoiceoverProviderName, quality: "fast" | "hd"):
       return quality === "hd"
         ? env("WAVESPEED_TTS_HD_MODEL") || "minimax/speech-2.5-turbo-preview"
         : env("WAVESPEED_TTS_FAST_MODEL") || "wavespeed-ai/omnivoice/text-to-speech";
+    case "google":
+      return "google-translate-tts";
     case "zai":
       return "zai-platform-tts";
   }
@@ -245,6 +250,101 @@ async function fetchAudioAsDataUrl(url: string): Promise<string> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Google Translate TTS (free fallback — no API key required)          */
+/* ------------------------------------------------------------------ */
+
+const GOOGLE_TTS_MAX_CHUNK = 180; // translate_tts rejects >~200 chars
+
+/** Split text into <=180-char chunks at sentence boundaries, then words. */
+export function chunkForGoogleTts(text: string): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  const pieces = text.replace(/\s+/g, " ").trim().split(/(?<=[.!?؟۔،؛;:])\s*/);
+  for (const piece of pieces) {
+    const p = piece.trim();
+    if (!p) continue;
+    if (p.length > GOOGLE_TTS_MAX_CHUNK) {
+      if (current.trim()) {
+        chunks.push(current.trim());
+        current = "";
+      }
+      let line = "";
+      for (const word of p.split(" ")) {
+        if ((line + " " + word).trim().length > GOOGLE_TTS_MAX_CHUNK) {
+          if (line.trim()) chunks.push(line.trim());
+          line = word;
+        } else {
+          line = (line + " " + word).trim();
+        }
+      }
+      if (line.trim()) chunks.push(line.trim());
+      continue;
+    }
+    if ((current + " " + p).trim().length > GOOGLE_TTS_MAX_CHUNK) {
+      if (current.trim()) chunks.push(current.trim());
+      current = p;
+    } else {
+      current = (current + " " + p).trim();
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.filter(Boolean);
+}
+
+async function generateGoogleVoiceover(opts: VoiceoverOptions): Promise<VoiceoverResult> {
+  const lang = ARABIC_RE.test(opts.text) ? "ar" : "en";
+  const chunks = chunkForGoogleTts(opts.text);
+  if (!chunks.length) throw new VoiceoverError("No speakable text provided.", 400, "google");
+  const speed = opts.speed ?? 1;
+  // translate_tts supports normal (1) and slow (0.24) playback only.
+  const ttsspeed = speed < 0.95 ? "0.24" : "1";
+
+  const buffers: Buffer[] = [];
+  for (const chunk of chunks) {
+    const url =
+      "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob" +
+      `&tl=${lang}&ttsspeed=${ttsspeed}&q=${encodeURIComponent(chunk)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; VisionCutAI/1.0)" },
+        signal: controller.signal,
+      });
+    } catch (err) {
+      const aborted = err instanceof Error && err.name === "AbortError";
+      throw new VoiceoverError(
+        aborted ? "The free TTS engine timed out." : "Could not reach the free TTS engine (translate.google.com).",
+        aborted ? 504 : 502,
+        "google",
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) {
+      throw new VoiceoverError(`The free TTS engine failed (HTTP ${res.status}).`, 502, "google");
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 512) {
+      throw new VoiceoverError("The free TTS engine returned no audio.", 502, "google");
+    }
+    buffers.push(buf);
+  }
+  const audio = Buffer.concat(buffers);
+  const warnings = [
+    "voiceover rendered by the free fallback engine (google-translate-tts) — single narrator voice, limited speed control",
+  ];
+  if (speed > 1.3) warnings.push("the free engine supports normal speed only");
+  return {
+    audioDataUrl: `data:audio/mpeg;base64,${audio.toString("base64")}`,
+    provider: "google",
+    model: "google-translate-tts",
+    warnings,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Z.ai platform SDK (sandbox)                                         */
 /* ------------------------------------------------------------------ */
 
@@ -288,6 +388,7 @@ function providerOrder(selected: VoiceoverProviderSetting): VoiceoverProviderNam
   if (selected !== "auto") return [selected];
   const order: VoiceoverProviderName[] = [];
   if (providerKey("wavespeed")) order.push("wavespeed");
+  order.push("google"); // free — always available as a fallback
   order.push("zai");
   return order;
 }
@@ -305,6 +406,9 @@ export async function generateVoiceover(opts: VoiceoverOptions): Promise<Voiceov
         const key = providerKey("wavespeed");
         if (!key) throw new VoiceoverError("WAVESPEED_API_KEY is not configured.", 503, "wavespeed");
         return await generateWavespeedVoiceover(opts, key);
+      }
+      if (provider === "google") {
+        return await generateGoogleVoiceover(opts);
       }
       return await generateZaiVoiceover(opts);
     } catch (err) {
@@ -333,6 +437,7 @@ export function voiceoverDiagnostics() {
       wavespeedFast: providerModel("wavespeed", "fast"),
       wavespeedHd: providerModel("wavespeed", "hd"),
     },
+    google: { available: true, note: "free fallback, no key needed" },
     zai: { available: true },
   };
 }

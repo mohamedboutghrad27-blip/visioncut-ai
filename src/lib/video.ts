@@ -166,7 +166,8 @@ async function httpJson(
     const snippet = text.replace(/\s+/g, " ").slice(0, 220);
     const map: Record<number, [number, string]> = {
       401: [502, `The ${provider} API key was rejected (401). Check VIDEO_API_KEY.`],
-      402: [402, `${provider} account has insufficient credits (402).`],
+      402:
+        [402, `${provider} account has no usable credits left (402) — top up to keep generating videos.`],
       403: [502, `The ${provider} key is not allowed for this request (403).`],
       404: [502, `${provider} model or endpoint not found (404). Check the video model id.`],
       429: [429, `${provider} rate limit exceeded (429).`],
@@ -369,7 +370,17 @@ async function pollWavespeed(id: string, key: string): Promise<VideoPollResult> 
     return { status: "SUCCESS", videoUrl: url };
   }
   if (status && ["failed", "cancelled", "timeout", "deleted"].includes(status)) {
-    return { status: "FAILED", error: data?.error || `WaveSpeed task ${status}.` };
+    const raw = data?.error || `WaveSpeed task ${status}.`;
+    // Surface a actionable message when the task died from an empty balance.
+    if (/insufficient|not enough|balance|credit/i.test(raw)) {
+      return {
+        status: "FAILED",
+        error:
+          `${raw} — WaveSpeed credits are exhausted. Video is the only engine without a free fallback: ` +
+          "top up at https://console.wavespeed.ai/billing to restore video generation (images and voiceover keep working for free).",
+      };
+    }
+    return { status: "FAILED", error: raw };
   }
   if (status === "created") return { status: "PENDING" };
   return { status: "PROCESSING" };
@@ -612,6 +623,22 @@ async function submitProvider(
   }
 }
 
+/** Live WaveSpeed credit balance (null when unknown/unavailable). Never leaks the key. */
+export async function getWavespeedBalance(): Promise<number | null> {
+  const key = env("WAVESPEED_API_KEY") || videoKey();
+  if (!key) return null;
+  try {
+    const { body, status } = await httpJson("wavespeed", "https://api.wavespeed.ai/api/v3/balance", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (status !== 200) return null;
+    const bal = (body as { data?: { balance?: number } } | null)?.data?.balance;
+    return typeof bal === "number" ? bal : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Submit a text-to-video task using the configured provider chain.
  * In `auto` mode, auth/billing failures on external providers fall through
@@ -625,6 +652,7 @@ export async function submitVideoGeneration(
   const pinned = selected !== "auto";
   const failures: string[] = [];
   const warnings: string[] = [];
+  let wavespeedOutOfCredits = false;
 
   for (const provider of order) {
     try {
@@ -633,6 +661,7 @@ export async function submitVideoGeneration(
       return result;
     } catch (err) {
       const ve = err instanceof VideoError ? err : new VideoError(String(err), 502, provider);
+      if (ve.status === 402 && provider === "wavespeed") wavespeedOutOfCredits = true;
       // Sandbox-only provider (zai) outside the sandbox or any pinned failure stops the chain.
       if (pinned) throw ve;
       const short = ve.message.replace(/\s+/g, " ").slice(0, 180);
@@ -640,6 +669,16 @@ export async function submitVideoGeneration(
       warnings.push(`${provider}: ${short}`);
       console.warn(`[video] provider ${provider} failed (status ${ve.status}), trying next...`);
     }
+  }
+  if (wavespeedOutOfCredits) {
+    const bal = await getWavespeedBalance();
+    throw new VideoError(
+      `WaveSpeed credits are exhausted${bal !== null ? ` (remaining balance $${bal.toFixed(2)})` : ""}. ` +
+        "Video is the only engine without a free fallback — top up at https://console.wavespeed.ai/billing to restore video generation. " +
+        "Images and voiceover keep working via the free engines.",
+      402,
+      "wavespeed",
+    );
   }
   throw new VideoError(
     "No video provider accepted the task. " +
