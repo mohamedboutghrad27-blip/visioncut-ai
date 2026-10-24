@@ -332,9 +332,12 @@ async function toolListProjects(args: z.infer<typeof ListProjectsArgs>): Promise
     let tracks = 0;
     let clips = 0;
     try {
-      const data = JSON.parse(p.data || "{}") as { tracks?: Array<{ clips?: unknown[] }> };
+      const data = JSON.parse(p.data || "{}") as { tracks?: Array<{ clips?: unknown[] }>; clips?: unknown[] };
       tracks = Array.isArray(data.tracks) ? data.tracks.length : 0;
-      clips = (data.tracks || []).reduce((n, t) => n + (Array.isArray(t.clips) ? t.clips.length : 0), 0);
+      // Editor state stores clips flat at the top level (each clip carries trackId);
+      // fall back to per-track counts for any legacy shape.
+      clips = Array.isArray(data.clips) ? data.clips.length : 0;
+      if (!clips) clips = (data.tracks || []).reduce((n, t) => n + (Array.isArray(t.clips) ? t.clips.length : 0), 0);
     } catch {
       /* unparseable data — skip counts */
     }
