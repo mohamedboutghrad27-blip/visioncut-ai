@@ -15,10 +15,12 @@ const PRODUCT_LINKS = [
   { label: "AI Tools", href: "/" as const, section: "ai-tools" },
   { label: "Templates", href: "/templates" },
   { label: "Pricing", href: "/pricing" },
+  { label: "Desktop App", href: "/download" },
 ];
 
 const RESOURCE_LINKS = [
   { label: "Help & Documentation", href: "/help" },
+  { label: "MCP & API", href: "/mcp" },
   { label: "Editor Guide", href: "/help" },
   { label: "Supported Formats", href: "/help" },
   { label: "Contact Support", href: "/help" },

@@ -21,6 +21,7 @@ const NAV_LINKS = [
   { label: "AI Tools", section: "ai-tools" },
   { label: "Templates", section: null, href: "/templates" },
   { label: "Pricing", section: "pricing" },
+  { label: "Desktop", section: null, href: "/download" },
   { label: "FAQ", section: "faq" },
 ];
 

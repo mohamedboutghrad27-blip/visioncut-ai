@@ -41,6 +41,7 @@ export const metadata: Metadata = {
   authors: [{ name: "VisionCut AI" }],
   creator: "VisionCut AI",
   applicationName: "VisionCut AI",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: [
       {
@@ -51,7 +52,10 @@ export const metadata: Metadata = {
           ),
         type: "image/svg+xml",
       },
+      { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon-512.png", type: "image/png", sizes: "512x512" },
     ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
   },
   openGraph: {
     type: "website",
