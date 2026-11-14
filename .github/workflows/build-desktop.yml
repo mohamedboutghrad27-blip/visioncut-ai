@@ -1,0 +1,76 @@
+name: Build Desktop Installers
+
+# Builds real native installers for VisionCut AI Desktop on real OS runners:
+#   windows-latest → NSIS .exe installer (the actual Windows installer)
+#   macos-latest   → .dmg
+#   ubuntu-latest  → .AppImage + .deb
+#
+# How to trigger later:
+#   1. Push this repo to GitHub.
+#   2. Either push a tag:  git tag desktop-v1.0.0 && git push origin desktop-v1.0.0
+#      or open the Actions tab and run "Build Desktop Installers" manually.
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: dist:win
+            name: windows
+          - os: macos-latest
+            script: dist:mac
+            name: macos
+          - os: ubuntu-latest
+            script: dist:linux
+            name: linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Build installer (${{ matrix.name }})
+        working-directory: desktop
+        run: npm run ${{ matrix.script }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: visioncut-desktop-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/latest*.yml
+
+      - name: Attach to GitHub Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
