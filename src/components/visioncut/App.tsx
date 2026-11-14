@@ -7,7 +7,7 @@ import { LandingPage } from "@/components/visioncut/landing/LandingPage";
 import { LoginPage, SignupPage, ResetPage } from "@/components/visioncut/AuthPages";
 import { DashboardPage } from "@/components/visioncut/DashboardPage";
 import { SettingsPage } from "@/components/visioncut/SettingsPage";
-import { FeaturesPage, TemplatesPage, PricingPage, HelpPage } from "@/components/visioncut/MarketingPages";
+import { FeaturesPage, TemplatesPage, PricingPage, HelpPage, PrivacyPage, TermsPage } from "@/components/visioncut/MarketingPages";
 import { EditorPage } from "@/components/visioncut/editor/EditorPage";
 
 function RouteView() {
@@ -34,6 +34,10 @@ function RouteView() {
       return <PricingPage />;
     case "/help":
       return <HelpPage />;
+    case "/privacy":
+      return <PrivacyPage />;
+    case "/terms":
+      return <TermsPage />;
     case "/login":
       return <LoginPage />;
     case "/signup":

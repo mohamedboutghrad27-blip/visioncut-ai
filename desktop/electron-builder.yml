@@ -1,0 +1,45 @@
+appId: ai.visioncut.app
+productName: VisionCut AI
+copyright: © 2026 VisionCut AI
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - main.cjs
+  - preload.cjs
+  - build/icon.png
+
+# No auto-update server yet — builds are distributed manually.
+publish: null
+
+mac:
+  category: public.app-category.video
+  icon: build/icon.png
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+
+linux:
+  icon: build/icon.png
+  category: Video;AudioVideo;AudioVideoEditing
+  desktop:
+    Name: VisionCut AI
+    Comment: AI-powered video editing studio
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: VisionCut AI

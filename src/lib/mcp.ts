@@ -81,6 +81,7 @@ const StartVideoArgs = z.object({
   quality: z.enum(["speed", "quality"]).optional(),
   with_audio: z.boolean().optional(),
   fps: z.union([z.literal(30), z.literal(60)]).optional(),
+  aspect_ratio: z.enum(["16:9", "9:16", "1:1", "4:5", "21:9"]).optional(),
 });
 
 const CheckVideoArgs = z.object({
@@ -104,6 +105,23 @@ const AddToProjectArgs = z.object({
   at_seconds: z.number().min(0).max(3600).optional(),
   duration: z.number().min(0.1).max(600).optional(),
   track_type: z.enum(["video", "audio"]).optional(),
+});
+
+const GetProjectArgs = z.object({
+  project_id: z.string().trim().min(3).max(40),
+});
+
+const UpdateClipArgs = z.object({
+  project_id: z.string().trim().min(3).max(40),
+  clip_id: z.string().trim().min(3).max(60),
+  at_seconds: z.number().min(0).max(3600).optional(),
+  duration: z.number().min(0.1).max(600).optional(),
+});
+
+const RemoveClipArgs = z.object({
+  project_id: z.string().trim().min(3).max(40),
+  clip_id: z.string().trim().min(3).max(60),
+  shift: z.boolean().optional(),
 });
 
 /* ------------------------------------------------------------------ */
@@ -207,6 +225,7 @@ export const MCP_TOOLS: McpToolDef[] = [
         quality: { type: "string", enum: ["speed", "quality"], description: "speed=480p ultra-fast, quality=720p ultra-fast" },
         with_audio: { type: "boolean", description: "Ask the model to generate audio (supported on some models)" },
         fps: { type: "integer", enum: [30, 60] },
+        aspect_ratio: { type: "string", enum: ["16:9", "9:16", "1:1", "4:5", "21:9"], description: "Frame shape (default 16:9). Use 9:16 for vertical/UGC video. Required to be honored by the Kie provider." },
       },
       required: ["prompt"],
       additionalProperties: false,
@@ -255,17 +274,59 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: "visioncut_add_to_project",
     description:
-      "Place an asset on a project timeline. The clip appears in the user's editor immediately (video/image go to a video track, audio to an audio track; default position: end of that track). media_id accepts asset ids from ANY source: visioncut_import_media (URL), visioncut_generate_image or visioncut_generate_voiceover (saved automatically) — no public URL required.",
+      "Place an asset on a project timeline. The clip appears in the user's editor immediately (video/image go to a video track, audio to an audio track; default position: end of that track). media_id accepts asset ids from ANY source: visioncut_import_media (URL), visioncut_generate_image or visioncut_generate_voiceover (saved automatically) — no public URL required. IMPORTANT: pass `duration` matching the media length — video clips otherwise default to 5s and long clips get truncated in preview/export. Verify placement with visioncut_get_project.",
     inputSchema: {
       type: "object",
       properties: {
         project_id: { type: "string", description: "Project id from visioncut_create_project or visioncut_list_projects" },
         media_id: { type: "string", description: "Asset id from visioncut_import_media (format as_xxx)" },
         at_seconds: { type: "number", minimum: 0, description: "Timeline position (default: end of the target track)" },
-        duration: { type: "number", minimum: 0.1, description: "Clip length in seconds (default: media duration, 4s for images)" },
+        duration: { type: "number", minimum: 0.1, description: "Clip length in seconds (default: 4s for images, 5s otherwise — ALWAYS pass the real media duration for video/audio)" },
         track_type: { type: "string", enum: ["video", "audio"], description: "Override target track type" },
       },
       required: ["project_id", "media_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "visioncut_get_project",
+    description:
+      "Read a project's full timeline state: tracks, every clip (id, name, track, type, start, duration, asset id), asset count and total duration. Use it to verify placements made by visioncut_add_to_project, to find clip_ids before visioncut_update_clip / visioncut_remove_clip, or to report timeline contents to the user.",
+    inputSchema: {
+      type: "object",
+      properties: { project_id: { type: "string", description: "Project id from visioncut_create_project or visioncut_list_projects" } },
+      required: ["project_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "visioncut_update_clip",
+    description:
+      "Move or re-time a clip that is already on a timeline: change its start position (at_seconds) and/or its length (duration). Typical use: fix a clip that was added with the default 5s duration when the real media is longer/shorter, or lay out scenes back-to-back. Returns the updated clip and the project's new total duration.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Project id" },
+        clip_id: { type: "string", description: "Clip id from visioncut_get_project (format c_xxx)" },
+        at_seconds: { type: "number", minimum: 0, description: "New timeline position in seconds" },
+        duration: { type: "number", minimum: 0.1, description: "New clip length in seconds (must not exceed the media length)" },
+      },
+      required: ["project_id", "clip_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "visioncut_remove_clip",
+    description:
+      "Delete a clip from a project timeline (the underlying asset stays in the cloud library and can be re-added). By default, later clips on the SAME track are shifted left to close the gap (shift=false keeps the gap). Useful to swap A/B variants: remove the old hook clip, then visioncut_add_to_project the alternative.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Project id" },
+        clip_id: { type: "string", description: "Clip id from visioncut_get_project (format c_xxx)" },
+        shift: { type: "boolean", description: "Shift later clips on the same track left to close the gap (default true)" },
+      },
+      required: ["project_id", "clip_id"],
       additionalProperties: false,
     },
   },
@@ -439,9 +500,10 @@ async function toolStartVideo(raw: unknown): Promise<McpToolResult> {
     withAudio: args.with_audio ?? false,
     fps: args.fps ?? 30,
     quality: args.quality ?? "speed",
+    aspectRatio: args.aspect_ratio,
   });
   return textResult(
-    `Video task submitted.\ntask_id: ${result.taskId}\nprovider: ${result.provider}\nmodel: ${result.model}` +
+    `Video task submitted.${args.aspect_ratio ? `\naspect_ratio: ${args.aspect_ratio}` : ""}\ntask_id: ${result.taskId}\nprovider: ${result.provider}\nmodel: ${result.model}` +
       (result.warnings?.length ? `\nwarnings: ${result.warnings.join(" | ")}` : "") +
       `\n\nPoll with visioncut_check_video (typical completion: 30-90 seconds).`,
   );
@@ -533,11 +595,11 @@ async function demoUserId(): Promise<string> {
   return user.id;
 }
 
-function defaultProjectData(name: string): string {
+function defaultProjectData(name: string, aspectRatio: string = "16:9"): string {
   const state = {
     version: 1,
     name,
-    aspectRatio: "16:9",
+    aspectRatio,
     tracks: [
       { id: "v1", type: "video", name: "Video 1", muted: false, hidden: false, locked: false, height: 64 },
       { id: "a1", type: "audio", name: "Audio 1", muted: false, hidden: false, locked: false, height: 56 },
@@ -553,7 +615,7 @@ async function toolCreateProject(raw: unknown): Promise<McpToolResult> {
   const args = CreateProjectArgs.parse(raw);
   const userId = await demoUserId();
   const project = await db.project.create({
-    data: { userId, name: args.name, aspectRatio: args.aspect_ratio || "16:9", data: defaultProjectData(args.name) },
+    data: { userId, name: args.name, aspectRatio: args.aspect_ratio || "16:9", data: defaultProjectData(args.name, args.aspect_ratio || "16:9") },
     select: { id: true, name: true, aspectRatio: true },
   });
   return textResult(
@@ -605,7 +667,12 @@ async function toolImportMedia(raw: unknown): Promise<McpToolResult> {
   try {
     const assetId = await storeInCloudLibrary(userId, buf, mimeType, name);
     return textResult(
-      `Media imported.\nasset_id: ${assetId}\nname: ${name}\ntype: ${mimeType} (${kind})\nsize: ${buf.length} bytes\n\nPlace it with visioncut_add_to_project (project_id + this asset_id).`,
+      `Media imported.\nasset_id: ${assetId}\nname: ${name}\ntype: ${mimeType} (${kind})\nsize: ${buf.length} bytes` +
+        (args.duration_seconds ? `\nduration: ${args.duration_seconds}s` : "") +
+        `\n\nPlace it with visioncut_add_to_project (project_id + this asset_id).` +
+        (args.duration_seconds && kind !== "image"
+          ? ` IMPORTANT: pass duration_seconds=${args.duration_seconds} as the \`duration\` argument — video clips otherwise default to 5s and get truncated.`
+          : ""),
     );
   } catch (err) {
     return textResult(`Import failed while saving: ${err instanceof Error ? err.message.slice(0, 160) : "database error"}.`, true);
@@ -713,7 +780,121 @@ async function toolAddToProject(raw: unknown): Promise<McpToolResult> {
 
   await db.project.update({ where: { id: project.id }, data: { data: JSON.stringify(state) } });
   return textResult(
-    `Clip added to project "${project.name}".\nproject_id: ${project.id}\nclip_id: ${clipId}\ntrack: ${track.name} (${track.type})\nstart: ${start}s, duration: ${clipDuration}s\n\nOpen /editor/${project.id} — the editor restores the media from the cloud automatically.`,
+    `Clip added to project "${project.name}".\nproject_id: ${project.id}\nclip_id: ${clipId}\ntrack: ${track.name} (${track.type})\nstart: ${start}s, duration: ${clipDuration}s` +
+      (kind !== "image" && !args.duration
+        ? `\nnote: clip length defaulted to ${clipDuration}s — if the media is longer, call visioncut_update_clip with the real duration so it is not truncated.`
+        : "") +
+      `\n\nOpen /editor/${project.id} — the editor restores the media from the cloud automatically. Verify with visioncut_get_project.`,
+  );
+}
+
+/* ---------------- timeline read/update tools ---------------- */
+
+function findClip(state: StoredProjectState, clipId: string): Record<string, unknown> | undefined {
+  return state.clips?.find((c) => c.id === clipId);
+}
+
+function recomputeDuration(state: StoredProjectState): number {
+  const total = (state.clips || []).reduce((m, c) => Math.max(m, Number(c.start || 0) + Number(c.duration || 0)), 0);
+  state.duration = total;
+  return total;
+}
+
+function clipLine(c: Record<string, unknown>): string {
+  return `- ${String(c.id)} "${String(c.name || "clip")}" [${String(c.type)}] track=${String(c.trackId)} start=${Number(c.start || 0).toFixed(2)}s duration=${Number(c.duration || 0).toFixed(2)}s asset=${String(c.assetId || "-")}`;
+}
+
+async function loadProjectState(projectId: string, userId: string): Promise<{ project: { id: string; name: string; data: string }; state: StoredProjectState } | null> {
+  const project = await db.project.findFirst({
+    where: { id: projectId, userId },
+    select: { id: true, name: true, data: true },
+  });
+  if (!project) return null;
+  try {
+    const state = JSON.parse(project.data || "{}") as StoredProjectState;
+    state.tracks = Array.isArray(state.tracks) && state.tracks.length ? state.tracks : [
+      { id: "v1", type: "video", name: "Video 1", muted: false, hidden: false, locked: false, height: 64 },
+      { id: "a1", type: "audio", name: "Audio 1", muted: false, hidden: false, locked: false, height: 56 },
+    ];
+    state.clips = Array.isArray(state.clips) ? state.clips : [];
+    state.assets = Array.isArray(state.assets) ? state.assets : [];
+    return { project, state };
+  } catch {
+    return null;
+  }
+}
+
+async function toolGetProject(raw: unknown): Promise<McpToolResult> {
+  const args = GetProjectArgs.parse(raw);
+  const userId = await demoUserId();
+  const loaded = await loadProjectState(args.project_id, userId);
+  if (!loaded) return textResult(`Project "${args.project_id}" was not found in your account. Use visioncut_list_projects to get valid ids.`, true);
+  const { project, state } = loaded;
+  const total = recomputeDuration(state);
+  const clipList = state.clips || [];
+  const trackList = state.tracks || [];
+  const clips = [...clipList].sort((a, b) => Number(a.start || 0) - Number(b.start || 0) || String(a.trackId).localeCompare(String(b.trackId)));
+  const trackLines = trackList.map((t) => `- ${t.id} "${t.name}" (${t.type}${t.locked ? ", locked" : ""})`).join("\n");
+  const clipLines = clips.length ? clips.map(clipLine).join("\n") : "(no clips yet — add some with visioncut_add_to_project)";
+  return textResult(
+    `Project "${project.name}" (id=${project.id})\n` +
+      `aspect_ratio: state=${String((state as { aspectRatio?: string }).aspectRatio || "(unset)")}\n` +
+      `total duration: ${total.toFixed(2)}s\nassets in library: ${(state.assets || []).length}\n\nTracks:\n${trackLines}\n\nClips (by start time):\n${clipLines}`,
+  );
+}
+
+async function toolUpdateClip(raw: unknown): Promise<McpToolResult> {
+  const args = UpdateClipArgs.parse(raw);
+  const userId = await demoUserId();
+  const loaded = await loadProjectState(args.project_id, userId);
+  if (!loaded) return textResult(`Project "${args.project_id}" was not found in your account.`, true);
+  const { project, state } = loaded;
+  const clip = findClip(state, args.clip_id);
+  if (!clip) {
+    const ids = (state.clips || []).map((c) => String(c.id)).join(", ");
+    return textResult(`Clip "${args.clip_id}" not found in this project.${ids ? ` Existing clips: ${ids}` : " The timeline is empty."} Use visioncut_get_project.`, true);
+  }
+  if (args.at_seconds !== undefined) clip.start = args.at_seconds;
+  if (args.duration !== undefined) clip.duration = args.duration;
+  const total = recomputeDuration(state);
+  await db.project.update({ where: { id: project.id }, data: { data: JSON.stringify(state) } });
+  return textResult(
+    `Clip updated in "${project.name}".\n${clipLine(clip)}\nproject total duration: ${total.toFixed(2)}s\n\nVerify the layout with visioncut_get_project.`,
+  );
+}
+
+async function toolRemoveClip(raw: unknown): Promise<McpToolResult> {
+  const args = RemoveClipArgs.parse(raw);
+  const userId = await demoUserId();
+  const loaded = await loadProjectState(args.project_id, userId);
+  if (!loaded) return textResult(`Project "${args.project_id}" was not found in your account.`, true);
+  const { project, state } = loaded;
+  const clip = findClip(state, args.clip_id);
+  if (!clip) {
+    const ids = (state.clips || []).map((c) => String(c.id)).join(", ");
+    return textResult(`Clip "${args.clip_id}" not found in this project.${ids ? ` Existing clips: ${ids}` : " The timeline is empty."} Use visioncut_get_project.`, true);
+  }
+  const removedStart = Number(clip.start || 0);
+  const removedDur = Number(clip.duration || 0);
+  state.clips = (state.clips || []).filter((c) => c.id !== args.clip_id);
+  if (args.shift !== false && removedDur > 0) {
+    const trackId = String(clip.trackId);
+    for (const c of state.clips) {
+      if (String(c.trackId) !== trackId) continue;
+      const s = Number(c.start || 0);
+      if (s >= removedStart + removedDur) {
+        // Fully after the removed clip — close the whole gap.
+        c.start = s - removedDur;
+      } else if (s >= removedStart) {
+        // Overlapped the removed clip — snap to where it began.
+        c.start = removedStart;
+      }
+    }
+  }
+  const total = recomputeDuration(state);
+  await db.project.update({ where: { id: project.id }, data: { data: JSON.stringify(state) } });
+  return textResult(
+    `Clip "${args.clip_id}" removed from "${project.name}"${args.shift === false ? " (gap kept)" : " (later clips on its track shifted left)"}.\nproject total duration: ${total.toFixed(2)}s\nThe asset stays in the cloud library and can be re-added with visioncut_add_to_project.`,
   );
 }
 
@@ -747,6 +928,12 @@ export async function callMcpTool(name: string, args: unknown): Promise<McpToolR
         return await toolImportMedia(args);
       case "visioncut_add_to_project":
         return await toolAddToProject(args);
+      case "visioncut_get_project":
+        return await toolGetProject(args);
+      case "visioncut_update_clip":
+        return await toolUpdateClip(args);
+      case "visioncut_remove_clip":
+        return await toolRemoveClip(args);
       default:
         return textResult(`Unknown tool "${name}".`, true);
     }

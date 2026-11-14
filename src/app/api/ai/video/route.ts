@@ -11,6 +11,7 @@ const schema = z.object({
   withAudio: z.boolean().optional(),
   fps: z.union([z.literal(30), z.literal(60)]).optional(),
   duration: z.union([z.literal(5), z.literal(10)]).optional(),
+  aspectRatio: z.enum(["16:9", "9:16", "1:1", "4:5", "21:9"]).optional(),
 });
 
 /** Creates an async text-to-video task. Poll via /api/ai/video-status/<taskId>. */
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
       withAudio: parsed.data.withAudio ?? false,
       fps: parsed.data.fps ?? 30,
       quality: parsed.data.quality ?? "speed",
+      aspectRatio: parsed.data.aspectRatio ?? "16:9",
     });
     return NextResponse.json({
       taskId: result.taskId,

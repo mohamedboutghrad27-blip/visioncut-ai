@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><style>
+  * { margin:0; padding:0; }
+  body { width:512px; height:512px; background:transparent; }
+  .tile {
+    width:512px; height:512px; border-radius:96px;
+    background:#0a0a0c;
+    display:flex; align-items:center; justify-content:center;
+    position:relative; overflow:hidden;
+  }
+  .glow {
+    position:absolute; inset:-40px;
+    background:radial-gradient(circle at 30% 25%, rgba(129,110,255,0.35), transparent 55%),
+               radial-gradient(circle at 75% 80%, rgba(56,189,248,0.22), transparent 50%);
+  }
+  .ring {
+    position:absolute; width:400px; height:400px; border-radius:88px;
+    border:2px solid rgba(255,255,255,0.09);
+  }
+  .mark {
+    width:240px; height:240px; border-radius:56px;
+    background:linear-gradient(135deg,#6d5bff 0%,#8b5cf6 45%,#38bdf8 100%);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 24px 60px rgba(109,91,255,0.45), inset 0 2px 0 rgba(255,255,255,0.35);
+    position:relative;
+  }
+  .play { width:0; height:0; margin-left:16px;
+    border-top:52px solid transparent; border-bottom:52px solid transparent;
+    border-left:84px solid #ffffff;
+    filter:drop-shadow(0 6px 14px rgba(0,0,0,0.35));
+  }
+  .cut {
+    position:absolute; top:34px; right:34px; width:74px; height:10px;
+    background:#0a0a0c; transform:rotate(-38deg); border-radius:6px;
+    box-shadow:0 0 0 2px rgba(10,10,12,0.55);
+  }
+</style></head>
+<body><div class="tile"><div class="glow"></div><div class="ring"></div>
+<div class="mark"><div class="play"></div><div class="cut"></div></div></div></body>
+</html>

@@ -49,12 +49,28 @@ import ZAI from "z-ai-web-dev-sdk";
 export type VideoProviderName = "zai" | "fal" | "wavespeed" | "kie" | "pixverse" | "higgsfield";
 export type VideoProviderSetting = "auto" | VideoProviderName;
 
+export type VideoAspectRatio = "16:9" | "9:16" | "1:1" | "4:5" | "21:9";
+
 export interface VideoSubmitOptions {
   prompt: string;
   duration: 5 | 10;
   withAudio: boolean;
   fps: 30 | 60;
   quality: "speed" | "quality";
+  /** Target frame shape. Defaults to 16:9 for backward compatibility. */
+  aspectRatio?: VideoAspectRatio;
+}
+
+/** Pixel size strings for the WaveSpeed wan-2.x families, which take W*H instead of aspect_ratio. */
+function sizeFor(aspect: VideoAspectRatio | undefined, quality: "speed" | "quality"): string {
+  const hd = quality === "quality";
+  switch (aspect || "16:9") {
+    case "9:16": return hd ? "1080*1920" : "720*1280";
+    case "1:1": return hd ? "1024*1024" : "720*720";
+    case "4:5": return hd ? "864*1080" : "720*900";
+    case "21:9": return hd ? "1920*824" : "1280*550";
+    default: return hd ? "1920*1080" : "1280*720";
+  }
 }
 
 export interface VideoSubmitResult {
@@ -267,7 +283,7 @@ async function submitFal(opts: VideoSubmitOptions, key: string, model: string): 
     },
     body: JSON.stringify({
       prompt: opts.prompt,
-      aspect_ratio: "16:9",
+      aspect_ratio: opts.aspectRatio || "16:9",
       resolution: "480p",
       num_frames: numFrames,
       enable_safety_checker: true,
@@ -330,20 +346,20 @@ async function submitWavespeed(
   const m = chosen.toLowerCase();
   const body: Record<string, unknown> = { prompt: opts.prompt };
   if (m.includes("wan-3.0")) {
-    body.aspect_ratio = "16:9";
+    body.aspect_ratio = opts.aspectRatio || "16:9";
     body.resolution = opts.quality === "quality" ? "1080p" : "720p";
     body.duration = Math.min(30, Math.max(2, opts.duration));
     body.generate_audio = opts.withAudio;
     body.enable_prompt_expansion = true;
   } else if (m.includes("seedance")) {
-    body.aspect_ratio = "16:9";
+    body.aspect_ratio = opts.aspectRatio || "16:9";
     body.duration = Math.min(12, Math.max(2, opts.duration));
   } else if (m.includes("wan-2.5")) {
-    body.size = opts.quality === "quality" ? "1920*1080" : "1280*720";
+    body.size = sizeFor(opts.aspectRatio, opts.quality);
     body.duration = opts.duration <= 5 ? 5 : 10;
     body.enable_prompt_expansion = true;
   } else if (m.includes("wan-2.")) {
-    body.size = m.includes("720p") ? "1280*720" : "832*480";
+    body.size = m.includes("720p") ? sizeFor(opts.aspectRatio, "quality") : sizeFor(opts.aspectRatio, "speed");
     body.duration = opts.duration <= 5 ? 5 : 8;
   }
   // Any other family: prompt alone is always valid — model defaults apply.
@@ -403,7 +419,7 @@ async function submitKie(opts: VideoSubmitOptions, key: string, model: string): 
   const { body } = await httpJson("kie", "https://api.kie.ai/api/v1/jobs/createTask", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, input: { prompt: opts.prompt, aspect_ratio: "16:9", duration: opts.duration } }),
+    body: JSON.stringify({ model, input: { prompt: opts.prompt, aspect_ratio: opts.aspectRatio || "16:9", duration: opts.duration } }),
   });
   const body2 = body as { code?: number; msg?: string; data?: { taskId?: string } } | null;
   if (body2?.code && body2.code !== 200) {
@@ -472,7 +488,7 @@ async function submitPixverse(
       },
       body: JSON.stringify({
         prompt: opts.prompt,
-        aspect_ratio: "16:9",
+        aspect_ratio: opts.aspectRatio || "16:9",
         duration: String(opts.duration),
         quality: "540p",
         ai_model: model,
@@ -542,7 +558,7 @@ async function submitHiggsfield(
         prompt: opts.prompt,
         duration: opts.duration,
         resolution: opts.quality === "quality" ? "1080p" : "720p",
-        aspect_ratio: "16:9",
+        aspect_ratio: opts.aspectRatio || "16:9",
         generate_audio: opts.withAudio,
       }),
     }));

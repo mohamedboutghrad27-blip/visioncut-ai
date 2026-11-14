@@ -13,6 +13,8 @@ export type RoutePath =
   | "/dashboard"
   | "/settings"
   | "/help"
+  | "/privacy"
+  | "/terms"
   | `/editor/${string}`;
 
 export type Route = {
@@ -103,4 +105,6 @@ export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/settings": "Settings",
   "/help": "Help & Support",
+  "/privacy": "Privacy Policy",
+  "/terms": "Terms of Service",
 };

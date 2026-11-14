@@ -219,3 +219,7 @@ export function HelpPage() {
     </div>
   );
 }
+
+// Legal pages live in their own module but are re-exported here so the
+// marketing surface (App routing) keeps a single import site.
+export { PrivacyPage, TermsPage } from "@/components/visioncut/LegalPages";

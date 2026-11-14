@@ -145,8 +145,8 @@ export function Footer() {
           <nav aria-label="Legal">
             <p className="text-sm font-semibold text-white">Legal</p>
             <ul className="mt-4 space-y-2.5">
-              <li><button onClick={() => router.navigate("/help")} className="text-sm text-zinc-500 hover:text-white">Privacy Policy</button></li>
-              <li><button onClick={() => router.navigate("/help")} className="text-sm text-zinc-500 hover:text-white">Terms of Service</button></li>
+              <li><button onClick={() => router.navigate("/privacy")} className="text-sm text-zinc-500 hover:text-white">Privacy Policy</button></li>
+              <li><button onClick={() => router.navigate("/terms")} className="text-sm text-zinc-500 hover:text-white">Terms of Service</button></li>
               <li><button onClick={() => router.navigate("/settings")} className="text-sm text-zinc-500 hover:text-white">Account Settings</button></li>
             </ul>
             <div className="mt-5 flex gap-3">
