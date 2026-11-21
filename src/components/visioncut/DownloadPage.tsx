@@ -23,6 +23,9 @@ import {
 import { toast } from "sonner";
 
 const VERSION = "1.0.0";
+const EXE_URL = "/downloads/VisionCut-Setup-1.0.0.exe";
+const EXE_SIZE = "78 MB";
+const EXE_SHA256 = "4c5a33ff6c1fb60d2ad90f09fc007fc4ea5ea757753001b762d30e657d8887c8";
 const SOURCE_URL = "/downloads/visioncut-desktop-source.zip";
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -170,9 +173,52 @@ export function DownloadPage() {
               </span>
             </div>
             <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-zinc-400">
-              For a classic installer with native menus and system save dialogs. The shell source is free — build the
-              installer for your platform with one command (Node.js 18+ required).
+              For a classic installer with native menus and system save dialogs. The Windows installer is ready to
+              download below — macOS and Linux build from source with one command (Node.js 18+ required).
             </p>
+          </Reveal>
+
+          {/* Windows installer — direct download */}
+          <Reveal className="mt-7" delay={40}>
+            <div className="overflow-hidden rounded-2xl border border-white/12 bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-6 sm:p-8">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
+                <div className="flex flex-1 items-start gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-zinc-100">
+                    <AppWindow className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-display text-xl font-semibold text-white">VisionCut AI for Windows</h3>
+                      <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+                        Ready · v{VERSION}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-sm leading-relaxed text-zinc-400">
+                      Full NSIS installer — assisted setup, Start-menu &amp; desktop shortcuts, clean uninstaller.
+                      Windows 10/11 64-bit · {EXE_SIZE} · installs into Program Files.
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={EXE_URL}
+                  download
+                  className="inline-flex h-12 shrink-0 items-center gap-2 rounded-lg bg-[#ededf2] px-7 text-sm font-medium text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-all hover:scale-[1.02] hover:bg-white"
+                >
+                  <Download className="h-4.5 w-4.5" /> Download .exe — {EXE_SIZE}
+                </a>
+              </div>
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <code className="min-w-0 flex-1 truncate rounded-lg border border-white/8 bg-black/50 px-3 py-2 font-mono text-[11.5px] text-zinc-400">
+                  SHA-256&nbsp;&nbsp;{EXE_SHA256}
+                </code>
+                <CopyButton text={EXE_SHA256} label="SHA-256" />
+              </div>
+              <p className="mt-4 text-xs leading-relaxed text-zinc-500">
+                Installer is unsigned: SmartScreen may show “Windows protected your PC” — click{" "}
+                <strong className="text-zinc-300">More info → Run anyway</strong>. Code-signed releases are on the
+                roadmap.
+              </p>
+            </div>
           </Reveal>
 
           <div className="mt-7 grid gap-4 md:grid-cols-3">
