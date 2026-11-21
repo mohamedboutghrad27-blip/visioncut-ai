@@ -1,14 +1,29 @@
 name: Build Desktop Installers
 
-# Builds real native installers for VisionCut AI Desktop on real OS runners:
-#   windows-latest → NSIS .exe installer (the actual Windows installer)
-#   macos-latest   → .dmg
+# Builds REAL native installers on REAL OS runners:
+#   windows-latest → NSIS .exe with the app icon embedded (rcedit runs natively)
+#                    and Authenticode-signed (installer + uninstaller + app exe)
+#   macos-latest   → .dmg (unsigned unless macOS signing secrets are added later)
 #   ubuntu-latest  → .AppImage + .deb
 #
-# How to trigger later:
-#   1. Push this repo to GitHub.
-#   2. Either push a tag:  git tag desktop-v1.0.0 && git push origin desktop-v1.0.0
-#      or open the Actions tab and run "Build Desktop Installers" manually.
+# ── Windows code signing ─────────────────────────────────────────────────────
+# Option A — REAL certificate (kills the SmartScreen warning properly):
+#   Repo → Settings → Secrets and variables → Actions → add:
+#     WINDOWS_PFX_B64       base64 of your code-signing .pfx
+#                           (windows: certutil -encode my.pfx out.b64
+#                            linux/mac: base64 -w0 my.pfx)
+#     WINDOWS_PFX_PASSWORD  the .pfx password
+#   electron-builder signs via CSC_LINK / CSC_KEY_PASSWORD automatically.
+#
+# Option B — no certificate (default): a self-signed code-signing certificate
+#   is generated on the runner. The build is still Authenticode-signed (shows
+#   "Digital signature: present"), and visioncut-selfsign.cer is uploaded as
+#   an artifact so users can add it to "Trusted People" to remove the
+#   unknown-publisher warning. Note: SmartScreen reputation needs a real OV/EV
+#   certificate — Option A remains the end goal.
+#
+# Trigger: push a tag "desktop-v*" (e.g. desktop-v1.0.0) or run manually from
+# the Actions tab.
 
 on:
   workflow_dispatch: {}
@@ -43,6 +58,34 @@ jobs:
         with:
           node-version: 20
 
+      # ── Windows: certificate (provided via secrets, or self-signed) ──
+      - name: Prepare Windows code-signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_PFX_B64: ${{ secrets.WINDOWS_PFX_B64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          if ($env:WINDOWS_PFX_B64) {
+            Write-Host "Using provided certificate from secrets (Option A)"
+            [IO.File]::WriteAllBytes("$PWD\signing.pfx", [Convert]::FromBase64String($env:WINDOWS_PFX_B64))
+            "CSC_LINK=$PWD\signing.pfx" >> $env:GITHUB_ENV
+            "CSC_KEY_PASSWORD=$env:WINDOWS_PFX_PASSWORD" >> $env:GITHUB_ENV
+          } else {
+            Write-Host "No certificate secret found - generating self-signed (Option B)"
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert `
+              -Subject "CN=VisionCut AI, O=VisionCut, C=MA" `
+              -CertStoreLocation "Cert:\CurrentUser\My" `
+              -KeyUsage DigitalSignature -FriendlyName "VisionCut AI (self-signed)"
+            $sec = ConvertTo-SecureString -String "visioncut-selfsign" -Force -AsPlainText
+            Export-PfxCertificate -Cert $cert -FilePath "$PWD\signing.pfx" -Password $sec | Out-Null
+            [IO.File]::WriteAllBytes("$PWD\visioncut-selfsign.cer", $cert.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cer))
+            "CSC_LINK=$PWD\signing.pfx" >> $env:GITHUB_ENV
+            "CSC_KEY_PASSWORD=visioncut-selfsign" >> $env:GITHUB_ENV
+          }
+
+      # ── Build: on Windows the default config runs rcedit natively → the app
+      #    icon + version info are embedded, and CSC_* signs the outputs ──
       - name: Install dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
@@ -64,6 +107,7 @@ jobs:
             desktop/release/*.AppImage
             desktop/release/*.deb
             desktop/release/latest*.yml
+            *.cer
 
       - name: Attach to GitHub Release (tag builds only)
         if: startsWith(github.ref, 'refs/tags/desktop-v')
@@ -74,3 +118,4 @@ jobs:
             desktop/release/*.dmg
             desktop/release/*.AppImage
             desktop/release/*.deb
+            visioncut-selfsign.cer

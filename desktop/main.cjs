@@ -38,6 +38,8 @@ function createWindow() {
     minHeight: 680,
     backgroundColor: "#09090b",
     title: "VisionCut AI",
+    // Window/taskbar icon in dev mode (the packaged exe embeds the icon via rcedit on CI).
+    icon: path.join(__dirname, "build/icon.png"),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
