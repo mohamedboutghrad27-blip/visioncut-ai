@@ -17,6 +17,7 @@ export type RoutePath =
   | "/terms"
   | "/mcp"
   | "/download"
+  | "/admin"
   | `/editor/${string}`;
 
 export type Route = {
@@ -111,4 +112,5 @@ export const PAGE_TITLES: Record<string, string> = {
   "/terms": "Terms of Service",
   "/mcp": "MCP & API",
   "/download": "Desktop App",
+  "/admin": "Admin",
 };

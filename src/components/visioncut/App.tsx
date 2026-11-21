@@ -8,6 +8,7 @@ import { LoginPage, SignupPage, ResetPage } from "@/components/visioncut/AuthPag
 import { DashboardPage } from "@/components/visioncut/DashboardPage";
 import { SettingsPage } from "@/components/visioncut/SettingsPage";
 import { FeaturesPage, TemplatesPage, PricingPage, HelpPage, PrivacyPage, TermsPage, McpPage, DownloadPage } from "@/components/visioncut/MarketingPages";
+import { AdminPage } from "@/components/visioncut/AdminPage";
 import { EditorPage } from "@/components/visioncut/editor/EditorPage";
 
 function RouteView() {
@@ -42,6 +43,8 @@ function RouteView() {
       return <McpPage />;
     case "/download":
       return <DownloadPage />;
+    case "/admin":
+      return <AdminPage />;
     case "/login":
       return <LoginPage />;
     case "/signup":

@@ -225,3 +225,4 @@ export function HelpPage() {
 export { PrivacyPage, TermsPage } from "@/components/visioncut/LegalPages";
 export { McpPage } from "@/components/visioncut/McpPage";
 export { DownloadPage } from "@/components/visioncut/DownloadPage";
+export { AdminPage } from "@/components/visioncut/AdminPage";
