@@ -267,9 +267,8 @@ export function DownloadPage() {
               </a>
             </div>
             <p className="mt-3 text-xs leading-relaxed text-zinc-500">
-              Installers are produced per release with electron-builder (unsigned for now — Windows may show a
-              SmartScreen prompt; macOS needs a right-click → Open on first launch). Signed, auto-updating builds are on
-              the roadmap.
+              Windows builds are Authenticode-signed by CI; macOS builds are unsigned for now (right-click → Open on
+              first launch). Auto-updating signed releases are on the roadmap.
             </p>
           </Reveal>
         </section>
