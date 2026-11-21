@@ -24,8 +24,9 @@ import { toast } from "sonner";
 
 const VERSION = "1.0.0";
 const EXE_URL = "/downloads/VisionCut-Setup-1.0.0.exe";
-const EXE_SIZE = "78 MB";
-const EXE_SHA256 = "4c5a33ff6c1fb60d2ad90f09fc007fc4ea5ea757753001b762d30e657d8887c8";
+const EXE_SIZE = "79 MB";
+const EXE_SHA256 = "579e48cbe4c6550406758babe60125a4ad2b3eb3bfc7c61f1e88799c3c837564";
+const CERT_URL = "/downloads/visioncut-selfsign.cer";
 const SOURCE_URL = "/downloads/visioncut-desktop-source.zip";
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -214,9 +215,13 @@ export function DownloadPage() {
                 <CopyButton text={EXE_SHA256} label="SHA-256" />
               </div>
               <p className="mt-4 text-xs leading-relaxed text-zinc-500">
-                Installer is unsigned: SmartScreen may show “Windows protected your PC” — click{" "}
-                <strong className="text-zinc-300">More info → Run anyway</strong>. Code-signed releases are on the
-                roadmap.
+                Authenticode-signed CI build — app icon embedded. SmartScreen may still ask on first launch (the
+                certificate is self-signed): click{" "}
+                <strong className="text-zinc-300">More info → Run anyway</strong>, or{" "}
+                <a href={CERT_URL} download className="text-zinc-300 underline hover:text-white">
+                  install our certificate
+                </a>{" "}
+                into “Trusted People” to remove the warning entirely. EV/OV certificate reputation is on the roadmap.
               </p>
             </div>
           </Reveal>
