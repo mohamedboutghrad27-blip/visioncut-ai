@@ -1,0 +1,6 @@
+# Heavy local build artifacts never needed for a Vercel deployment.
+# The Windows installer itself (public/downloads/, 81MB) stays — it is under
+# the 100MB per-file limit; only the unpacked build dir exceeds it.
+desktop/release
+desktop/node_modules
+.next/cache
