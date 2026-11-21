@@ -79,7 +79,7 @@ jobs:
               -KeyUsage DigitalSignature -FriendlyName "VisionCut AI (self-signed)"
             $sec = ConvertTo-SecureString -String "visioncut-selfsign" -Force -AsPlainText
             Export-PfxCertificate -Cert $cert -FilePath "$PWD\signing.pfx" -Password $sec | Out-Null
-            [IO.File]::WriteAllBytes("$PWD\visioncut-selfsign.cer", $cert.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cer))
+            Export-Certificate -Cert $cert -FilePath "$PWD\visioncut-selfsign.cer"
             "CSC_LINK=$PWD\signing.pfx" >> $env:GITHUB_ENV
             "CSC_KEY_PASSWORD=visioncut-selfsign" >> $env:GITHUB_ENV
           }

@@ -6,6 +6,7 @@
   "main": "main.cjs",
   "author": "VisionCut AI <support@visioncut.ai>",
   "license": "MIT",
+  "homepage": "https://visioncut-ai-mu.vercel.app",
   "private": true,
   "scripts": {
     "start": "electron .",
