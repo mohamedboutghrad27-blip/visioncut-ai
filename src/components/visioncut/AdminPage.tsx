@@ -457,7 +457,7 @@ export function AdminPage() {
             {/* 30-day activity chart */}
             <div className="mt-6 rounded-2xl border border-white/8 bg-white/[0.025] p-6">
               <div className="flex items-center justify-between">
-                <h2 className="font-display text-base font-semibold text-white">Last 30 days</h2>
+                <h2 className="font-display text-base font-semibold text-white">Last 90 days</h2>
                 <div className="flex items-center gap-4 text-xs text-zinc-500">
                   <span className="flex items-center gap-1.5">
                     <span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" /> Signups
@@ -468,7 +468,12 @@ export function AdminPage() {
                 </div>
               </div>
               <div className="mt-4 h-56">
-                {stats && (
+                {stats && stats.activity.every((d) => !d.signups && !d.projects) && (
+                  <div className="flex h-full items-center justify-center text-sm text-zinc-600">
+                    No signups or projects created in this window yet.
+                  </div>
+                )}
+                {stats && !stats.activity.every((d) => !d.signups && !d.projects) && (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={stats.activity} margin={{ top: 4, right: 4, bottom: 0, left: -22 }}>
                       <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
@@ -477,7 +482,7 @@ export function AdminPage() {
                         tick={{ fill: "#71717a", fontSize: 10 }}
                         tickLine={false}
                         axisLine={false}
-                        interval={6}
+                        interval={13}
                       />
                       <YAxis tick={{ fill: "#71717a", fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
                       <ChartTooltip
@@ -771,8 +776,8 @@ export function AdminPage() {
                 Paste this into Claude Desktop / Claude Code to connect the 14 VisionCut tools.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <code className="min-w-0 max-w-full truncate rounded-lg border border-white/8 bg-black/50 px-3 py-2 font-mono text-[12px] text-zinc-300">
-                  {revealToken ? (revealToken === "(not configured)" ? revealToken : "•".repeat(16) + revealToken.slice(-4)) : "••••••••••••••••"}
+                <code className="min-w-0 max-w-full break-all rounded-lg border border-white/8 bg-black/50 px-3 py-2 font-mono text-[12px] text-zinc-300">
+                  {revealToken ? revealToken : "••••••••••••••••••••••"}
                 </code>
                 <button
                   onClick={() => void revealApiKey()}

@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const d7 = new Date(now.getTime() - 7 * DAY);
   const d30 = new Date(now.getTime() - 30 * DAY);
+  const d90 = new Date(now.getTime() - 90 * DAY);
 
   const [
     usersTotal,
@@ -101,8 +102,8 @@ export async function GET(req: NextRequest) {
       },
     }),
     db.project.findMany({ select: { data: true } }),
-    db.user.findMany({ where: { createdAt: { gte: d30 } }, select: { createdAt: true } }),
-    db.project.findMany({ where: { createdAt: { gte: d30 } }, select: { createdAt: true } }),
+    db.user.findMany({ where: { createdAt: { gte: d90 } }, select: { createdAt: true } }),
+    db.project.findMany({ where: { createdAt: { gte: d90 } }, select: { createdAt: true } }),
     db.mediaFile.findMany({
       orderBy: [{ size: "desc" }],
       take: 15,
@@ -119,14 +120,16 @@ export async function GET(req: NextRequest) {
 
   const clipsTotal = allProjectsData.reduce((n, p) => n + countClips(p.data), 0);
 
-  // 30-day activity buckets (signups vs projects created), UTC day keys.
-  const days: { date: string; label: string; signups: number; projects: number }[] = [];
+  // 90-day activity buckets (signups vs projects created), UTC day keys.
+  // Build `days` AFTER bumping so each row reflects the mutated buckets
+  // (spreading copies before the bumps would freeze every bar at zero).
+  const order: { key: string; label: string }[] = [];
   const bucket = new Map<string, { signups: number; projects: number }>();
-  for (let i = 29; i >= 0; i--) {
+  for (let i = 89; i >= 0; i--) {
     const d = new Date(now.getTime() - i * DAY);
     const key = d.toISOString().slice(0, 10);
     bucket.set(key, { signups: 0, projects: 0 });
-    days.push({ date: key, label: `${d.getUTCMonth() + 1}/${d.getUTCDate()}`, ...bucket.get(key)! });
+    order.push({ key, label: `${d.getUTCMonth() + 1}/${d.getUTCDate()}` });
   }
   const bump = (iso: Date, field: "signups" | "projects") => {
     const key = iso.toISOString().slice(0, 10);
@@ -135,6 +138,11 @@ export async function GET(req: NextRequest) {
   };
   signupDates.forEach((u) => bump(u.createdAt, "signups"));
   projectDates.forEach((p) => bump(p.createdAt, "projects"));
+  const days = order.map(({ key, label }) => ({
+    date: key,
+    label,
+    ...(bucket.get(key) as { signups: number; projects: number }),
+  }));
 
   return NextResponse.json({
     generatedAt: now.toISOString(),
