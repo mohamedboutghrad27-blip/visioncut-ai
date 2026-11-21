@@ -7,6 +7,8 @@ import time
 AUTH = os.path.expanduser("~/.local/share/com.vercel.cli/auth.json")
 LOG = "/tmp/vercel-deploy.log"
 PROJ = "/home/z/my-project"
+# Absolute path: CLI is installed in a persistent dir inside the project.
+VERCEL = "/home/z/my-project/.tools/node_modules/.bin/vercel"
 
 
 def log(msg):
@@ -37,12 +39,12 @@ else:
 
 time.sleep(3)
 log("linking project visioncut-ai ...")
-rc = os.system("vercel link --yes --project visioncut-ai")
+rc = os.system(VERCEL + " link --yes --project visioncut-ai")
 log("link rc=%d" % rc)
 if rc != 0:
     sys.exit(1)
 
 log("deploying to PRODUCTION ...")
-rc = os.system("vercel --prod --yes")
+rc = os.system(VERCEL + " --prod --yes")
 log("deploy rc=%d" % rc)
 log("PROD DEPLOY DONE" if rc == 0 else "PROD DEPLOY FAILED")

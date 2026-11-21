@@ -16,4 +16,7 @@ log = os.open("/tmp/vercel-login.log", os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
 os.dup2(log, 1)
 os.dup2(log, 2)
 os.dup2(devnull, 0)
-os.execvp("vercel", ["vercel", "login"])
+# Absolute path: the CLI lives in a persistent dir inside the project, so the
+# daemon does not depend on PATH or on npm-global surviving sandbox recycles.
+VERCEL = "/home/z/my-project/.tools/node_modules/.bin/vercel"
+os.execvp(VERCEL, [VERCEL, "login"])

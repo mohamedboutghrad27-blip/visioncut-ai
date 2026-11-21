@@ -62,3 +62,4 @@ server.log
 worklog.md
 .zscripts/
 agent-ctx/
+.tools/
