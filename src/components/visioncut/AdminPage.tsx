@@ -105,6 +105,7 @@ export function AdminPage() {
   const [input, setInput] = useState("");
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [tools, setTools] = useState<string[]>([]);
+  const [mcpShared, setMcpShared] = useState(true);
   const [loading, setLoading] = useState(false);
   const [keyError, setKeyError] = useState("");
 
@@ -132,10 +133,17 @@ export function AdminPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
         });
+        if (!mcp.ok) {
+          setTools([]);
+          setMcpShared(false);
+          return;
+        }
         const d = (await mcp.json()) as { result?: { tools?: { name: string }[] } };
         setTools((d.result?.tools ?? []).map((t) => t.name));
+        setMcpShared(true);
       } catch {
         setTools([]);
+        setMcpShared(false);
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load stats");
@@ -229,6 +237,7 @@ export function AdminPage() {
                 setAdminKey(null);
                 setStats(null);
                 setTools([]);
+                setMcpShared(true);
               }}
               className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-4 text-sm text-zinc-400 transition-colors hover:text-white"
             >
@@ -378,7 +387,7 @@ export function AdminPage() {
                 /api/mcp?key=••••••••
               </code>
               <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300">
-                {tools.length > 0 ? `${tools.length} tools live` : "tools unknown"}
+                {tools.length > 0 ? `${tools.length} tools live` : mcpShared ? "tools unknown" : "token separate"}
               </span>
               <button
                 onClick={() => router.navigate("/mcp")}
@@ -400,8 +409,10 @@ export function AdminPage() {
               </div>
             )}
             <p className="mt-4 flex items-center gap-2 text-xs text-zinc-500">
-              <Clock className="h-3.5 w-3.5" /> Admin key currently doubles as the MCP token (set a dedicated
-              ADMIN_KEY env to separate them).
+              <Clock className="h-3.5 w-3.5" />{" "}
+              {mcpShared
+                ? "Admin key currently doubles as the MCP token."
+                : "Dedicated ADMIN_KEY protects this panel; the MCP API keeps its own stronger token."}
             </p>
           </div>
         </section>
