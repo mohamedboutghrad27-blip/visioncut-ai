@@ -1,9 +1,10 @@
 /**
  * GET /api/admin/stats  (X-Admin-Key header or ?key=)
  *
- * One-shot operational snapshot for the admin panel: user signups, projects,
+ * Operational snapshot for the admin console: user signups, projects,
  * timeline clips, cloud media storage, pending password resets, aspect-ratio
- * distribution and the 50 most recent users/projects.
+ * distribution, 30-day signup/project activity buckets, the largest cloud
+ * media files, and the 50 most recent users/projects.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -32,6 +33,8 @@ function countClips(dataStr: string): number {
   }
 }
 
+const DAY = 864e5;
+
 export async function GET(req: NextRequest) {
   if (!checkAdminAuth(req)) {
     return NextResponse.json(
@@ -41,8 +44,8 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
-  const d7 = new Date(now.getTime() - 7 * 864e5);
-  const d30 = new Date(now.getTime() - 30 * 864e5);
+  const d7 = new Date(now.getTime() - 7 * DAY);
+  const d30 = new Date(now.getTime() - 30 * DAY);
 
   const [
     usersTotal,
@@ -58,6 +61,9 @@ export async function GET(req: NextRequest) {
     recentUsers,
     recentProjects,
     allProjectsData,
+    signupDates,
+    projectDates,
+    mediaRows,
   ] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { createdAt: { gte: d7 } } }),
@@ -95,9 +101,40 @@ export async function GET(req: NextRequest) {
       },
     }),
     db.project.findMany({ select: { data: true } }),
+    db.user.findMany({ where: { createdAt: { gte: d30 } }, select: { createdAt: true } }),
+    db.project.findMany({ where: { createdAt: { gte: d30 } }, select: { createdAt: true } }),
+    db.mediaFile.findMany({
+      orderBy: [{ size: "desc" }],
+      take: 15,
+      select: {
+        id: true,
+        name: true,
+        mimeType: true,
+        size: true,
+        createdAt: true,
+        user: { select: { email: true } },
+      },
+    }),
   ]);
 
   const clipsTotal = allProjectsData.reduce((n, p) => n + countClips(p.data), 0);
+
+  // 30-day activity buckets (signups vs projects created), UTC day keys.
+  const days: { date: string; label: string; signups: number; projects: number }[] = [];
+  const bucket = new Map<string, { signups: number; projects: number }>();
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * DAY);
+    const key = d.toISOString().slice(0, 10);
+    bucket.set(key, { signups: 0, projects: 0 });
+    days.push({ date: key, label: `${d.getUTCMonth() + 1}/${d.getUTCDate()}`, ...bucket.get(key)! });
+  }
+  const bump = (iso: Date, field: "signups" | "projects") => {
+    const key = iso.toISOString().slice(0, 10);
+    const b = bucket.get(key);
+    if (b) b[field] += 1;
+  };
+  signupDates.forEach((u) => bump(u.createdAt, "signups"));
+  projectDates.forEach((p) => bump(p.createdAt, "projects"));
 
   return NextResponse.json({
     generatedAt: now.toISOString(),
@@ -119,8 +156,20 @@ export async function GET(req: NextRequest) {
         owner: p.user.email,
       })),
     },
-    media: { files: mediaCount, bytes: mediaAgg._sum.size ?? 0 },
+    media: {
+      files: mediaCount,
+      bytes: mediaAgg._sum.size ?? 0,
+      largest: mediaRows.map((m) => ({
+        id: m.id,
+        name: m.name,
+        mimeType: m.mimeType,
+        size: m.size,
+        createdAt: m.createdAt.toISOString(),
+        owner: m.user.email,
+      })),
+    },
     resets: { pending: pendingResets },
+    activity: days,
     recentUsers: recentUsers.map((u) => ({
       id: u.id,
       email: u.email,
